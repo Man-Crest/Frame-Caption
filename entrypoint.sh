@@ -64,7 +64,12 @@ if path.endswith('.gz'):
         shutil.copyfileobj(f_in, f_out)
     print(f'✅ Decompressed to {mf_path}')
 
-# If the bundle contains a .onnx inside, it should be handled by the app loader expecting a .onnx path
+# Try to locate an embedded .onnx file if present (best-effort)
+onnx_guess = os.path.join('/app/models/moondream2-onnx', 'moondream-0_5b-int8.onnx')
+if not os.path.exists(onnx_guess):
+    # Leave a marker file to indicate the expected path and that extraction is needed
+    with open(os.path.join('/app/models/moondream2-onnx', 'README.txt'), 'w') as f:
+        f.write('Place the extracted .onnx file here as moondream-0_5b-int8.onnx or update MOONDREAM_ONNX_PATH.')
 PY
     else
         echo "✅ Model already exists at $MODEL_PATH"

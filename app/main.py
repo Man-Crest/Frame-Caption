@@ -21,13 +21,8 @@ from pydantic import BaseModel, Field
 from loguru import logger
 import psutil
 
-# Import transformers for Moondream2
-try:
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    TRANSFORMERS_AVAILABLE = False
-    logger.warning("Transformers not available. Model will be loaded on first request.")
+# We run ONNX-only for the 0.5B path. Remove transformers usage.
+TRANSFORMERS_AVAILABLE = False
 
 # Import queue management
 from app.services.queue_manager import queue_manager
@@ -124,29 +119,8 @@ def initialize_model():
         except Exception as e:
             logger.error(f"ONNX backend initialization failed: {e}. Falling back to transformers backend.")
 
-    # Transformers fallback
-    if not TRANSFORMERS_AVAILABLE:
-        logger.error("Transformers not available and ONNX backend not initialized. Cannot load model.")
-        return False
-
-    try:
-        logger.info("Initializing Moondream2 model using transformers backend...")
-        model = AutoModelForCausalLM.from_pretrained(
-            "vikhyatk/moondream2",
-            revision="2025-06-21",
-            trust_remote_code=True,
-            device_map="auto"
-        )
-        tokenizer = AutoTokenizer.from_pretrained(
-            "vikhyatk/moondream2",
-            revision="2025-06-21",
-            trust_remote_code=True
-        )
-        logger.info("Transformers backend initialized successfully")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to initialize transformers backend: {str(e)}")
-        return False
+    logger.error("ONNX backend not initialized and transformers backend disabled. Cannot load model.")
+    return False
 
 # Utility functions
 def decode_base64_image(image_data: str) -> Image.Image:
