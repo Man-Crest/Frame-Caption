@@ -66,7 +66,23 @@ model = None
 tokenizer = None
 device = None
 BACKEND = os.getenv("MOONDREAM_BACKEND", "transformers").lower()
-ONNX_MODEL_PATH = os.getenv("MOONDREAM_ONNX_PATH", "/app/models/moondream2-onnx/moondream-0_5b-int8.mf.gz")
+ONNX_MODEL_PATH = os.getenv("MOONDREAM_ONNX_PATH", "/app/models/moondream2-onnx/moondream-0_5b-int8.onnx")
+
+def _current_model_meta() -> Dict[str, Any]:
+    if BACKEND == "onnx":
+        return {
+            "model_name": "Moondream2-0.5B-ONNX",
+            "model_type": "Vision Language Model (ONNX)",
+            "model_id": "vikhyatk/moondream2",
+            "revision": "onnx",
+        }
+    else:
+        return {
+            "model_name": "Moondream2",
+            "model_type": "Vision Language Model",
+            "model_id": "vikhyatk/moondream2",
+            "revision": "2025-06-21",
+        }
 
 # Pydantic models (keeping existing ones for backward compatibility)
 class ImageDescriptionRequest(BaseModel):
@@ -331,12 +347,15 @@ async def describe_image(request: ImageDescriptionRequest):
         # Calculate confidence (placeholder - Moondream2 doesn't provide confidence scores)
         confidence = 0.85  # Default confidence
         
+        meta = _current_model_meta()
         return ImageDescriptionResponse(
             description=answer,
             confidence=confidence,
             processing_time=processing_time,
             model_info={
-                "model": "Moondream2-0.5B-ONNX",
+                "model": meta["model_name"],
+                "model_id": meta["model_id"],
+                "revision": meta["revision"],
                 "device": str(device),
                 "max_tokens": request.max_tokens,
                 "temperature": request.temperature
@@ -380,12 +399,15 @@ async def describe_image_file(
         
         processing_time = time.time() - start_time
         
+        meta = _current_model_meta()
         return {
             "description": answer,
             "confidence": 0.85,
             "processing_time": processing_time,
             "model_info": {
-                "model": "Moondream2-0.5B-ONNX",
+                "model": meta["model_name"],
+                "model_id": meta["model_id"],
+                "revision": meta["revision"],
                 "device": str(device),
                 "max_tokens": max_tokens,
                 "temperature": temperature
@@ -426,12 +448,15 @@ async def caption_image(
         
         processing_time = time.time() - start_time
         
+        meta = _current_model_meta()
         return {
             "caption": caption,
             "length": length,
             "processing_time": processing_time,
             "model_info": {
-                "model": "Moondream2-0.5B-ONNX",
+                "model": meta["model_name"],
+                "model_id": meta["model_id"],
+                "revision": meta["revision"],
                 "device": str(device)
             }
         }
@@ -446,11 +471,12 @@ async def get_model_info():
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     
+    meta = _current_model_meta()
     return {
-        "model_name": "Moondream2-0.5B-ONNX",
-        "model_type": "Vision Language Model (ONNX)",
-        "model_id": "vikhyatk/moondream2",
-        "revision": "onnx",
+        "model_name": meta["model_name"],
+        "model_type": meta["model_type"],
+        "model_id": meta["model_id"],
+        "revision": meta["revision"],
         "device": str(device),
         "gpu_available": torch.cuda.is_available(),
         "memory_usage": get_memory_usage(),
