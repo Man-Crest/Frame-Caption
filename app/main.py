@@ -11,9 +11,9 @@ import time
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
-import torch
 import numpy as np
 from PIL import Image
+import moondream as md
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -60,8 +60,8 @@ app.add_middleware(
 model = None
 tokenizer = None
 device = None
-BACKEND = os.getenv("MOONDREAM_BACKEND", "transformers").lower()
-ONNX_MODEL_PATH = os.getenv("MOONDREAM_ONNX_PATH", "/app/models/moondream2-onnx/moondream-0_5b-int8.onnx")
+BACKEND = os.getenv("MOONDREAM_BACKEND", "mf").lower()
+MF_MODEL_PATH = os.getenv("MOONDREAM_MF_PATH", "/app/models/moondream2-onnx/moondream-0_5b-int8.mf")
 
 def _current_model_meta() -> Dict[str, Any]:
     if BACKEND == "onnx":
@@ -108,18 +108,17 @@ def initialize_model():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    if BACKEND == "onnx":
+    if BACKEND == "mf":
         try:
-            logger.info("Initializing Moondream2 0.5B ONNX backend...")
-            from app.services.moondream_onnx_loader import MoondreamONNX
-            model = MoondreamONNX(ONNX_MODEL_PATH)
+            logger.info("Initializing Moondream2 0.5B (mf) backend via moondream API...")
+            model = md.vl(model=MF_MODEL_PATH)
             tokenizer = None
-            logger.info("ONNX backend initialized successfully")
+            logger.info("Moondream (mf) backend initialized successfully")
             return True
         except Exception as e:
-            logger.error(f"ONNX backend initialization failed: {e}. Falling back to transformers backend.")
+            logger.error(f"Moondream (mf) backend initialization failed: {e}")
 
-    logger.error("ONNX backend not initialized and transformers backend disabled. Cannot load model.")
+    logger.error("Moondream (mf) backend not initialized and transformers backend disabled. Cannot load model.")
     return False
 
 # Utility functions
@@ -156,7 +155,11 @@ def get_memory_usage() -> Dict[str, float]:
 
 def get_gpu_memory() -> Optional[Dict[str, Any]]:
     """Get GPU memory usage if available"""
-    if torch.cuda.is_available():
+    try:
+        import torch
+    except Exception:
+        torch = None
+    if torch and torch.cuda.is_available():
         return {
             "allocated_mb": torch.cuda.memory_allocated() / 1024 / 1024,
             "cached_mb": torch.cuda.memory_reserved() / 1024 / 1024,
@@ -177,13 +180,9 @@ async def generate_caption_with_moondream2(request: CaptionRequest) -> CaptionRe
         image = decode_base64_image(request.image_data)
         
         # Generate caption using Moondream2
-        if BACKEND == "onnx" and hasattr(model, "caption"):
-            response = model.caption(image, length="normal")
-            caption = response["caption"]
-        else:
-            with torch.no_grad():
-                response = model.caption(image, length="normal")
-                caption = response["caption"]
+        # Moondream .mf API supports passing PIL Image directly
+        response = model.caption(image, length="normal")
+        caption = response["caption"]
         
         processing_time = time.time() - start_time
         
@@ -311,10 +310,8 @@ async def describe_image(request: ImageDescriptionRequest):
         image = decode_base64_image(request.image)
         
         # Generate description using the correct Moondream2 API
-        with torch.no_grad():
-            # Use the query method for visual question answering
-            response = model.query(image, request.prompt)
-            answer = response["answer"]
+        response = model.query(image, request.prompt)
+        answer = response["answer"]
         
         processing_time = time.time() - start_time
         
@@ -367,9 +364,8 @@ async def describe_image_file(
         # Generate description using the correct Moondream2 API
         start_time = time.time()
         
-        with torch.no_grad():
-            response = model.query(image, prompt)
-            answer = response["answer"]
+        response = model.query(image, prompt)
+        answer = response["answer"]
         
         processing_time = time.time() - start_time
         
@@ -416,9 +412,8 @@ async def caption_image(
         # Generate caption using the correct Moondream2 API
         start_time = time.time()
         
-        with torch.no_grad():
-            response = model.caption(image, length=length)
-            caption = response["caption"]
+        response = model.caption(image, length=length)
+        caption = response["caption"]
         
         processing_time = time.time() - start_time
         
@@ -452,7 +447,7 @@ async def get_model_info():
         "model_id": meta["model_id"],
         "revision": meta["revision"],
         "device": str(device),
-        "gpu_available": torch.cuda.is_available(),
+        "gpu_available": False,
         "memory_usage": get_memory_usage(),
         "gpu_memory": get_gpu_memory(),
         "queue_enabled": True,

@@ -6,26 +6,18 @@ echo "🚀 Starting Moondream2 VLM Container..."
 
 # Function to check if transformers is installed
 check_transformers() {
-    echo "🔍 Checking Transformers installation..."
-    
-    if python -c "import transformers; print('✅ Transformers is installed')" 2>/dev/null; then
-        echo "✅ Transformers module found"
+    echo "🔍 Checking Moondream package installation..."
+    if python -c "import moondream; print('✅ moondream is installed')" 2>/dev/null; then
+        echo "✅ moondream module found"
         return 0
     else
-        echo "❌ Transformers module not found"
-        echo "📦 Attempting to install Transformers..."
-        
-        if pip install --no-cache-dir transformers torch 2>/dev/null; then
-            echo "✅ Transformers installation successful"
-            if python -c "import transformers; print('✅ Transformers verified')" 2>/dev/null; then
-                echo "✅ Transformers installation verified"
-                return 0
-            fi
-        else
-            echo "❌ Transformers installation failed"
+        echo "❌ moondream module not found"
+        echo "📦 Attempting to install moondream..."
+        if pip install --no-cache-dir moondream 2>/dev/null; then
+            echo "✅ moondream installation successful"
+            return 0
         fi
-        
-        echo "❌ All installation methods failed"
+        echo "❌ moondream installation failed"
         return 1
     fi
 }
@@ -109,14 +101,12 @@ start_app() {
 main() {
     echo "🔧 Initializing Moondream2 VLM..."
     
-    # Check GPU
+    # Check GPU (optional)
     check_gpu
     
-    # Check and install transformers if needed
+    # Ensure moondream package is present
     if ! check_transformers; then
-        echo "❌ Failed to install Transformers. Starting server anyway..."
-        echo "💡 The model will be downloaded on first request"
-        echo "💡 You can manually install transformers later if needed"
+        echo "❌ Failed to install moondream. Server cannot start without it."
     fi
     
     # Download model if needed
