@@ -29,10 +29,12 @@ COPY requirements.txt .
 # Install Python dependencies from requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+## moondream installed via PyPI in requirements.txt
+
 # Skip pre-downloading the model during build to avoid failures; it will download at runtime
 
-# Verify transformers installation
-RUN python -c "import transformers; print('✅ Transformers verified during build')"
+# Verify moondream installation
+RUN python -c "import moondream, sys; print('✅ moondream verified during build')"
 
 # Copy application code
 COPY . .

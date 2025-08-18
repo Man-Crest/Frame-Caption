@@ -1,5 +1,5 @@
 # Core dependencies for Moondream 0.5B .mf runtime
-moondream>=0.5.0
+moondream==0.1.1
 huggingface_hub>=0.21.0
 
 # Image processing

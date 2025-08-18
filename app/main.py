@@ -179,9 +179,9 @@ async def generate_caption_with_moondream2(request: CaptionRequest) -> CaptionRe
         # Decode image
         image = decode_base64_image(request.image_data)
         
-        # Generate caption using Moondream2
-        # Moondream .mf API supports passing PIL Image directly
-        response = model.caption(image, length="normal")
+        # Generate caption using Moondream 0.5B .mf API (encode first)
+        encoded_image = model.encode_image(image)
+        response = model.caption(encoded_image, length="normal")
         caption = response["caption"]
         
         processing_time = time.time() - start_time
@@ -310,7 +310,8 @@ async def describe_image(request: ImageDescriptionRequest):
         image = decode_base64_image(request.image)
         
         # Generate description using the correct Moondream2 API
-        response = model.query(image, request.prompt)
+        encoded_image = model.encode_image(image)
+        response = model.query(encoded_image, request.prompt)
         answer = response["answer"]
         
         processing_time = time.time() - start_time
@@ -364,7 +365,8 @@ async def describe_image_file(
         # Generate description using the correct Moondream2 API
         start_time = time.time()
         
-        response = model.query(image, prompt)
+        encoded_image = model.encode_image(image)
+        response = model.query(encoded_image, prompt)
         answer = response["answer"]
         
         processing_time = time.time() - start_time
@@ -412,7 +414,8 @@ async def caption_image(
         # Generate caption using the correct Moondream2 API
         start_time = time.time()
         
-        response = model.caption(image, length=length)
+        encoded_image = model.encode_image(image)
+        response = model.caption(encoded_image, length=length)
         caption = response["caption"]
         
         processing_time = time.time() - start_time
