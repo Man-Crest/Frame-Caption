@@ -103,18 +103,18 @@ def initialize_model():
         logger.info(f"Using device: {device}")
         
         # Load model and tokenizer from Hugging Face
-        logger.info("Loading Moondream2 model from Hugging Face...")
+        logger.info("Loading Moondream2 0.5B ONNX model from Hugging Face...")
         
         model = AutoModelForCausalLM.from_pretrained(
             "vikhyatk/moondream2",
-            revision="2025-06-21",
+            revision="onnx",
             trust_remote_code=True,
             device_map="auto"  # Automatically handle device placement
         )
         
         tokenizer = AutoTokenizer.from_pretrained(
             "vikhyatk/moondream2", 
-            revision="2025-06-21", 
+            revision="onnx",
             trust_remote_code=True
         )
         
@@ -325,7 +325,7 @@ async def describe_image(request: ImageDescriptionRequest):
             confidence=confidence,
             processing_time=processing_time,
             model_info={
-                "model": "Moondream2",
+                "model": "Moondream2-0.5B-ONNX",
                 "device": str(device),
                 "max_tokens": request.max_tokens,
                 "temperature": request.temperature
@@ -374,7 +374,7 @@ async def describe_image_file(
             "confidence": 0.85,
             "processing_time": processing_time,
             "model_info": {
-                "model": "Moondream2",
+                "model": "Moondream2-0.5B-ONNX",
                 "device": str(device),
                 "max_tokens": max_tokens,
                 "temperature": temperature
@@ -420,7 +420,7 @@ async def caption_image(
             "length": length,
             "processing_time": processing_time,
             "model_info": {
-                "model": "Moondream2",
+                "model": "Moondream2-0.5B-ONNX",
                 "device": str(device)
             }
         }
@@ -436,10 +436,10 @@ async def get_model_info():
         raise HTTPException(status_code=503, detail="Model not loaded")
     
     return {
-        "model_name": "Moondream2",
-        "model_type": "Vision Language Model",
+        "model_name": "Moondream2-0.5B-ONNX",
+        "model_type": "Vision Language Model (ONNX)",
         "model_id": "vikhyatk/moondream2",
-        "revision": "2025-06-21",
+        "revision": "onnx",
         "device": str(device),
         "gpu_available": torch.cuda.is_available(),
         "memory_usage": get_memory_usage(),

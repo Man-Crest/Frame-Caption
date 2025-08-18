@@ -28,12 +28,12 @@ COPY requirements.txt .
 # Install Python dependencies from requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download moondream2 model from Hugging Face (optional, for faster startup)
-RUN echo "📦 Pre-downloading Moondream2 model from Hugging Face..." && \
+# Pre-download moondream2 0.5B ONNX model from Hugging Face (optional, for faster startup)
+RUN echo "📦 Pre-downloading Moondream2 0.5B ONNX model from Hugging Face..." && \
     python -c "from transformers import AutoModelForCausalLM, AutoTokenizer; \
-    model = AutoModelForCausalLM.from_pretrained('vikhyatk/moondream2', revision='2025-06-21', trust_remote_code=True, device_map='auto'); \
-    tokenizer = AutoTokenizer.from_pretrained('vikhyatk/moondream2', revision='2025-06-21', trust_remote_code=True); \
-    print('✅ Moondream2 model pre-downloaded successfully')"
+    model = AutoModelForCausalLM.from_pretrained('vikhyatk/moondream2', revision='onnx', trust_remote_code=True, device_map='auto'); \
+    tokenizer = AutoTokenizer.from_pretrained('vikhyatk/moondream2', revision='onnx', trust_remote_code=True); \
+    print('✅ Moondream2 0.5B ONNX model pre-downloaded successfully')"
 
 # Verify transformers installation
 RUN python -c "import transformers; print('✅ Transformers verified during build')"

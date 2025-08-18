@@ -1,8 +1,10 @@
-# Core ML dependencies
-torch>=2.0.0
-torchvision>=0.15.0
+# Core ML dependencies (CPU optimized for Moondream2-0.5B ONNX)
+# Note: Using CPU-only torch for better performance on CPU-only systems
+torch>=2.0.0+cpu
+torchvision>=0.15.0+cpu
 transformers>=4.35.0
 accelerate>=0.24.0
+onnxruntime>=1.15.0
 
 # Image processing
 Pillow>=10.0.0

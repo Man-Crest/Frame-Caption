@@ -32,12 +32,12 @@ check_transformers() {
 
 # Function to download model if not exists
 download_model() {
-    echo "📥 Checking for Moondream2 model..."
+    echo "📥 Checking for Moondream2 0.5B ONNX model..."
     
-    MODEL_PATH="/app/models/moondream2"
+    MODEL_PATH="/app/models/moondream2-onnx"
     
     if [ ! -d "$MODEL_PATH" ]; then
-        echo "📦 Downloading Moondream2 model from HuggingFace..."
+        echo "📦 Downloading Moondream2 0.5B ONNX model from HuggingFace..."
         
         # Check if transformers is available
         if ! python -c "import transformers" 2>/dev/null; then
@@ -56,16 +56,16 @@ os.environ['HF_HOME'] = '/app/models'
 os.environ['TRANSFORMERS_CACHE'] = '/app/models'
 
 # Download and cache the model from HuggingFace
-print('Downloading Moondream2 model from HuggingFace...')
+print('Downloading Moondream2 0.5B ONNX model from HuggingFace...')
 model = AutoModelForCausalLM.from_pretrained(
     'vikhyatk/moondream2',
-    revision='2025-06-21',
+    revision='onnx',
     trust_remote_code=True,
     device_map='auto'
 )
 tokenizer = AutoTokenizer.from_pretrained(
     'vikhyatk/moondream2', 
-    revision='2025-06-21', 
+    revision='onnx',
     trust_remote_code=True
 )
 print('Model downloaded successfully!')
