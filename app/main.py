@@ -65,6 +65,8 @@ app.add_middleware(
 model = None
 tokenizer = None
 device = None
+BACKEND = os.getenv("MOONDREAM_BACKEND", "transformers").lower()
+ONNX_MODEL_PATH = os.getenv("MOONDREAM_ONNX_PATH", "/app/models/moondream2-onnx/moondream-0_5b-int8.mf.gz")
 
 # Pydantic models (keeping existing ones for backward compatibility)
 class ImageDescriptionRequest(BaseModel):
@@ -88,41 +90,46 @@ class HealthResponse(BaseModel):
 
 # Initialize model function
 def initialize_model():
-    """Initialize Moondream2 model using transformers"""
+    """Initialize Moondream2 model using selected backend (onnx or transformers)"""
     global model, tokenizer, device
-    
+
+    # Set device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Using device: {device}")
+
+    if BACKEND == "onnx":
+        try:
+            logger.info("Initializing Moondream2 0.5B ONNX backend...")
+            from app.services.moondream_onnx_loader import MoondreamONNX
+            model = MoondreamONNX(ONNX_MODEL_PATH)
+            tokenizer = None
+            logger.info("ONNX backend initialized successfully")
+            return True
+        except Exception as e:
+            logger.error(f"ONNX backend initialization failed: {e}. Falling back to transformers backend.")
+
+    # Transformers fallback
     if not TRANSFORMERS_AVAILABLE:
-        logger.warning("Transformers not available. Skipping model initialization.")
+        logger.error("Transformers not available and ONNX backend not initialized. Cannot load model.")
         return False
-    
+
     try:
-        logger.info("Initializing Moondream2 model using transformers...")
-        
-        # Set device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.info(f"Using device: {device}")
-        
-        # Load model and tokenizer from Hugging Face
-        logger.info("Loading Moondream2 0.5B ONNX model from Hugging Face...")
-        
+        logger.info("Initializing Moondream2 model using transformers backend...")
         model = AutoModelForCausalLM.from_pretrained(
             "vikhyatk/moondream2",
-            revision="onnx",
+            revision="2025-06-21",
             trust_remote_code=True,
-            device_map="auto"  # Automatically handle device placement
+            device_map="auto"
         )
-        
         tokenizer = AutoTokenizer.from_pretrained(
-            "vikhyatk/moondream2", 
-            revision="onnx",
+            "vikhyatk/moondream2",
+            revision="2025-06-21",
             trust_remote_code=True
         )
-        
-        logger.info("Model initialized successfully!")
+        logger.info("Transformers backend initialized successfully")
         return True
-        
     except Exception as e:
-        logger.error(f"Failed to initialize model: {str(e)}")
+        logger.error(f"Failed to initialize transformers backend: {str(e)}")
         return False
 
 # Utility functions
@@ -180,9 +187,13 @@ async def generate_caption_with_moondream2(request: CaptionRequest) -> CaptionRe
         image = decode_base64_image(request.image_data)
         
         # Generate caption using Moondream2
-        with torch.no_grad():
+        if BACKEND == "onnx" and hasattr(model, "caption"):
             response = model.caption(image, length="normal")
             caption = response["caption"]
+        else:
+            with torch.no_grad():
+                response = model.caption(image, length="normal")
+                caption = response["caption"]
         
         processing_time = time.time() - start_time
         

@@ -13,6 +13,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - TOKENIZERS_PARALLELISM=false
+      - MOONDREAM_BACKEND=onnx
+      - MOONDREAM_ONNX_PATH=/app/models/moondream2-onnx/moondream-0_5b-int8.onnx
     # CPU-only configuration (no GPU runtime required)
     restart: unless-stopped
     healthcheck:

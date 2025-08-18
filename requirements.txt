@@ -1,10 +1,11 @@
 # Core ML dependencies (CPU optimized for Moondream2-0.5B ONNX)
-# Note: Using CPU-only torch for better performance on CPU-only systems
-torch>=2.0.0+cpu
-torchvision>=0.15.0+cpu
+# Use standard spec here; CPU wheels will be chosen by default in our Docker base image.
+torch>=2.0.0
+torchvision>=0.15.0
 transformers>=4.35.0
 accelerate>=0.24.0
 onnxruntime>=1.15.0
+huggingface_hub>=0.21.0
 
 # Image processing
 Pillow>=10.0.0
