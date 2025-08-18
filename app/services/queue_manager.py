@@ -10,7 +10,7 @@ from typing import Dict, Optional
 from datetime import datetime
 import aiohttp
 
-from app.models.schemas import (
+from ..models.schemas import (
     CaptionRequest,
     SurveillanceRequest,
     CaptionResult,

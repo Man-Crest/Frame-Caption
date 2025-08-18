@@ -93,9 +93,11 @@ start_app() {
     # Set environment variables for optimal performance
     export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
     export TOKENIZERS_PARALLELISM=false
+    export PYTHONPATH=/app
     
     # Start the FastAPI server
     exec uvicorn app.main:app \
+        --app-dir /app \
         --host 0.0.0.0 \
         --port 8000 \
         --workers 1 \
