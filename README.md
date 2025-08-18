@@ -1,133 +1,227 @@
-# Moondream2 VLM Docker Setup
+# Moondream2 VLM API with Queue Management
 
-A production-ready Docker container for Moondream2 Vision Language Model (VLM) using Hugging Face Transformers. Based on the official documentation: https://huggingface.co/vikhyatk/moondream2
+High-performance image description generation using Moondream2 Vision Language Model, enhanced with queue management for surveillance systems.
 
-## 🌟 Features
+## Features
 
-- **Hugging Face Integration**: Uses official transformers library for Moondream2
-- **Multiple Capabilities**: Image captioning, visual querying, object detection, and pointing
-- **Dynamic Model Download**: Automatically downloads and caches Moondream2 model at build time
-- **GPU Acceleration**: Full CUDA support for optimal performance
-- **RESTful API**: FastAPI-based API with comprehensive endpoints
-- **Health Monitoring**: Built-in health checks and monitoring
-- **Production Ready**: Docker Compose setup with persistent volumes
-- **High Accuracy**: Optimized for best image description quality
+### Core Features
+- **Moondream2 Integration**: State-of-the-art vision language model for image understanding
+- **Queue Management**: Asynchronous processing with priority queuing
+- **Motion Detection API**: Dedicated endpoints for surveillance systems
+- **Webhook Support**: Real-time notifications for processing results
+- **Priority Queuing**: Intelligent job prioritization based on motion intensity
+- **System Monitoring**: Comprehensive statistics and health monitoring
 
+### Surveillance-Specific Features
+- **Motion Detection Endpoints**: `/motion/detect` and `/motion/detect-with-webhook`
+- **Queue Management**: `/queue/*` endpoints for job monitoring
+- **Priority Levels**: Critical, High, Normal, Low based on motion intensity
+- **Webhook Delivery**: Automatic result delivery to external systems
+- **Job Tracking**: Real-time status updates and queue position monitoring
 
+## Architecture
 
-## 🚀 Quick Start
+```
+Motion Detection → API Endpoint → Priority Queue → Worker Pool → Moondream2 → Webhook Response
+```
 
-### Prerequisites
+### Queue System
+- **Priority Queue**: Jobs processed based on motion intensity
+- **Worker Pool**: Configurable concurrent processing (default: 2 workers)
+- **Queue Limits**: Configurable queue size with overflow protection
+- **Job Lifecycle**: Queued → Processing → Completed/Failed/Cancelled
 
-- Docker and Docker Compose
-- NVIDIA GPU with CUDA support (recommended)
-- NVIDIA Container Toolkit (for GPU support)
+## Installation
 
-### Installation
-
-1. **Clone the repository:**
+1. **Clone the repository**:
 ```bash
 git clone <repository-url>
 cd Moondream2
 ```
 
-2. **Build and run with Docker Compose:**
+2. **Install dependencies**:
 ```bash
-# Build and start the container
-docker compose up --build
-
-# Or run in background
-docker compose up -d --build
+pip install -r requirements.txt
 ```
 
-3. **Access the API:**
-- API Documentation: http://localhost:8000/docs
-- Health Check: http://localhost:8000/health
-- Root Endpoint: http://localhost:8000/
-
-## 📋 API Endpoints
-
-### 1. Health Check
+3. **Run the server**:
 ```bash
-GET /health
+python -m app.main
 ```
-Returns system health status, model loading status, and resource usage.
 
-### 2. Image Description (Base64)
-```bash
-POST /describe
-Content-Type: application/json
+The API will be available at `http://localhost:8000`
 
+## API Endpoints
+
+### Motion Detection
+
+#### POST `/motion/detect`
+Add a motion detection job to the processing queue.
+
+**Request Body**:
+```json
 {
-  "image": "base64_encoded_image_data",
-  "prompt": "Describe this image in detail",
-  "max_tokens": 512,
-  "temperature": 0.7,
-  "top_p": 0.9
+  "camera_id": "camera_001",
+  "frame_data": "base64_encoded_image",
+  "motion_intensity": 0.7,
+  "timestamp": "2024-01-01T12:00:00Z",
+  "location": "Front Door",
+  "metadata": {
+    "zone": "entrance",
+    "sensitivity": "high"
+  }
 }
 ```
 
-### 3. Image Description (File Upload)
-```bash
-POST /describe/file
-Content-Type: multipart/form-data
-
-file: <image_file>
-prompt: "Describe this image in detail"
-max_tokens: 512
-temperature: 0.7
-top_p: 0.9
+**Response**:
+```json
+{
+  "job_id": "uuid-string",
+  "status": "queued",
+  "message": "Motion detection job queued for processing",
+  "queue_position": 3,
+  "estimated_wait_time": 6.5,
+  "webhook_configured": false
+}
 ```
 
-### 4. Image Captioning
-```bash
-POST /caption
-Content-Type: multipart/form-data
+#### POST `/motion/detect-with-webhook`
+Add a motion detection job with webhook notification.
 
-file: <image_file>
-length: "normal"  # "short" or "normal"
+**Parameters**:
+- `camera_id`: Camera identifier
+- `frame_data`: Base64 encoded image
+- `motion_intensity`: Motion intensity (0.0-1.0)
+- `webhook_url`: URL for result delivery
+- `webhook_headers`: Optional headers for webhook
+- `prompt`: Custom caption prompt
+- `metadata`: Additional metadata
+
+### Queue Management
+
+#### GET `/queue/job/{job_id}`
+Get the status of a specific job.
+
+#### GET `/queue/jobs`
+List all jobs with optional filtering.
+
+**Query Parameters**:
+- `limit`: Number of jobs to return (default: 50)
+- `offset`: Pagination offset (default: 0)
+- `status`: Filter by status (queued, processing, completed, failed, cancelled)
+
+#### GET `/queue/stats`
+Get comprehensive system statistics.
+
+**Response**:
+```json
+{
+  "total_jobs": 150,
+  "active_jobs": 2,
+  "queue_size": 5,
+  "max_concurrent_jobs": 2,
+  "status_counts": {
+    "completed": 120,
+    "queued": 5,
+    "processing": 2,
+    "failed": 3
+  },
+  "system_status": "healthy",
+  "average_processing_time": 2.3,
+  "webhook_success_rate": 0.98
+}
 ```
 
-### 5. Object Detection
-```bash
-POST /detect
-Content-Type: multipart/form-data
+#### DELETE `/queue/job/{job_id}`
+Cancel a job (only queued or processing jobs).
 
-file: <image_file>
-object_name: "person"  # Object to detect
+#### POST `/queue/cleanup`
+Clean up old completed/failed jobs.
+
+**Query Parameters**:
+- `max_age_hours`: Maximum age in hours (default: 24)
+
+### Legacy Endpoints (Backward Compatibility)
+
+#### POST `/describe`
+Synchronous image description generation.
+
+#### POST `/describe/file`
+File upload for image description.
+
+#### POST `/caption`
+Generate image captions.
+
+#### GET `/health`
+System health check.
+
+#### GET `/model/info`
+Model information and status.
+
+## Configuration
+
+### Queue Settings
+The queue manager can be configured in `app/services/queue_manager.py`:
+
+```python
+# Default settings
+max_workers = 2          # Concurrent processing jobs
+max_queue_size = 100     # Maximum queue size
 ```
 
-### 6. Model Information
-```bash
-GET /model/info
+### Priority Mapping
+Motion intensity to priority mapping:
+- `≥ 0.8`: Critical priority
+- `≥ 0.6`: High priority  
+- `≥ 0.4`: Normal priority
+- `< 0.4`: Low priority
+
+## Webhook Integration
+
+### Webhook Payload Format
+```json
+{
+  "job_id": "uuid-string",
+  "camera_id": "camera_001",
+  "status": "completed",
+  "result": {
+    "caption": "A person is walking through the front door",
+    "confidence": 0.85,
+    "processing_time": 2.3,
+    "model_info": {
+      "model": "Moondream2",
+      "device": "cuda",
+      "camera_id": "camera_001",
+      "motion_intensity": 0.7,
+      "priority": "high"
+    }
+  },
+  "error_message": null,
+  "timestamp": "2024-01-01T12:00:00Z",
+  "metadata": {
+    "zone": "entrance",
+    "sensitivity": "high"
+  }
+}
 ```
-Returns detailed model information and resource usage.
 
-## 🔧 Configuration
+### Error Handling
+If processing fails, the webhook will include an error message:
+```json
+{
+  "job_id": "uuid-string",
+  "camera_id": "camera_001",
+  "status": "failed",
+  "result": null,
+  "error_message": "Model processing failed: CUDA out of memory",
+  "timestamp": "2024-01-01T12:00:00Z",
+  "metadata": {}
+}
+```
 
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CUDA_VISIBLE_DEVICES` | `0` | GPU device to use |
-| `PYTORCH_CUDA_ALLOC_CONF` | `max_split_size_mb:128` | CUDA memory allocation config |
-| `TOKENIZERS_PARALLELISM` | `false` | Disable tokenizer parallelism |
-| `HF_HOME` | `/app/models` | HuggingFace cache directory |
-| `TRANSFORMERS_CACHE` | `/app/models` | Transformers cache directory |
-
-### Docker Compose Configuration
-
-The `docker-compose.yml` includes:
-- GPU support with NVIDIA runtime
-- Persistent model cache volume
-- Health checks
-- Log volume mounting
-- Data directory mounting
-
-## 🎯 Usage Examples
+## Usage Examples
 
 ### Python Client Example
-
 ```python
 import requests
 import base64
@@ -135,133 +229,83 @@ from PIL import Image
 import io
 
 # Load and encode image
-image_path = "path/to/your/image.jpg"
-with open(image_path, "rb") as f:
-    image_data = base64.b64encode(f.read()).decode()
+image = Image.open("motion_frame.jpg")
+buffer = io.BytesIO()
+image.save(buffer, format="JPEG")
+frame_data = base64.b64encode(buffer.getvalue()).decode()
 
-# API request
-url = "http://localhost:8000/describe"
-payload = {
-    "image": image_data,
-    "prompt": "Describe this image in detail, focusing on the main objects and their relationships.",
-    "max_tokens": 512,
-    "temperature": 0.7
-}
+# Send motion detection request
+response = requests.post("http://localhost:8000/motion/detect", json={
+    "camera_id": "camera_001",
+    "frame_data": frame_data,
+    "motion_intensity": 0.8,
+    "location": "Front Door"
+})
 
-response = requests.post(url, json=payload)
-result = response.json()
+job_id = response.json()["job_id"]
 
-print(f"Description: {result['description']}")
-print(f"Processing Time: {result['processing_time']:.2f}s")
+# Check job status
+status_response = requests.get(f"http://localhost:8000/queue/job/{job_id}")
+print(status_response.json())
 ```
 
-### cURL Example
+### Webhook Receiver Example
+```python
+from flask import Flask, request
 
-```bash
-# Health check
-curl http://localhost:8000/health
+app = Flask(__name__)
 
-# Image description with file upload
-curl -X POST "http://localhost:8000/describe/file" \
-  -H "accept: application/json" \
-  -H "Content-Type: multipart/form-data" \
-  -F "file=@image.jpg" \
-  -F "prompt=Describe this image in detail"
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.json
+    
+    if data['status'] == 'completed':
+        caption = data['result']['caption']
+        camera_id = data['camera_id']
+        print(f"Motion detected on {camera_id}: {caption}")
+        
+        # Send alert, store in database, etc.
+        
+    elif data['status'] == 'failed':
+        print(f"Processing failed: {data['error_message']}")
+    
+    return {'status': 'received'}, 200
+
+if __name__ == '__main__':
+    app.run(port=5000)
 ```
 
-## 🏗️ Architecture
+## Performance Considerations
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Client App    │    │   FastAPI       │    │   Moondream2    │
-│                 │───▶│   Server        │───▶│   VLM Model     │
-│                 │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                              │
-                              ▼
-                       ┌─────────────────┐
-                       │   Model Cache   │
-                       │   (Persistent)  │
-                       └─────────────────┘
-```
+### Queue Management
+- **Worker Count**: Adjust based on GPU memory and processing requirements
+- **Queue Size**: Balance between memory usage and frame buffering
+- **Priority Queuing**: Ensures critical events are processed first
+- **Overflow Protection**: Drops low-priority jobs when queue is full
 
-## 🔍 Monitoring
+### Monitoring
+- **System Stats**: Monitor queue depth, processing times, and success rates
+- **Webhook Success Rate**: Track delivery reliability
+- **Memory Usage**: Monitor GPU and system memory consumption
+- **Processing Latency**: Track end-to-end processing times
 
-### Health Check Response
-```json
-{
-  "status": "healthy",
-  "model_loaded": true,
-  "gpu_available": true,
-  "memory_usage": {
-    "system": {
-      "rss_mb": 2048.5,
-      "vms_mb": 4096.2,
-      "percent": 15.3
-    },
-    "gpu": {
-      "allocated_mb": 8192.0,
-      "cached_mb": 10240.0,
-      "total_mb": 24576.0
-    }
-  }
-}
-```
-
-### Logs
-Logs are stored in the `moondream2_logs` volume and can be accessed via:
-```bash
-docker compose logs moondream2-vlm
-```
-
-## 🚀 Performance Optimization
-
-### GPU Memory Optimization
-- Uses `max_split_size_mb:128` for efficient CUDA memory allocation
-- Automatic model offloading when needed
-- Optimized batch processing
-
-### Model Loading
-- Lazy loading with startup initialization
-- Persistent model cache to avoid re-downloading
-- Memory-efficient model loading
-
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
-1. **GPU not detected:**
-   ```bash
-   # Check NVIDIA Docker runtime
-   docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
-   ```
+1. **Queue Full**: Increase `max_queue_size` or implement frame sampling
+2. **Slow Processing**: Increase `max_workers` or optimize model loading
+3. **Webhook Failures**: Check network connectivity and webhook endpoint
+4. **Memory Issues**: Reduce `max_workers` or implement memory cleanup
 
-2. **Out of memory:**
-   - Reduce `max_tokens` parameter
-   - Lower image resolution
-   - Use CPU mode if GPU memory is insufficient
+### Logs
+Check `logs/moondream2.log` for detailed error messages and system information.
 
-3. **Model download fails:**
-   ```bash
-   # Check internet connection
-   docker compose exec moondream2-vlm curl -I https://huggingface.co
-   ```
+## License
 
-### Debug Mode
-```bash
-# Run with debug logging
-docker compose up --build -e LOG_LEVEL=DEBUG
-```
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 📊 Performance Benchmarks
-
-| Hardware | Image Size | Processing Time | Memory Usage |
-|----------|------------|-----------------|--------------|
-| RTX 4090 | 1024x1024  | ~2.5s          | ~8GB GPU     |
-| RTX 3080 | 1024x1024  | ~4.0s          | ~6GB GPU     |
-| CPU Only | 1024x1024  | ~15.0s         | ~4GB RAM     |
-
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -269,12 +313,9 @@ docker compose up --build -e LOG_LEVEL=DEBUG
 4. Add tests if applicable
 5. Submit a pull request
 
-## 📄 License
+## Support
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- [Moondream2](https://github.com/vikhyatk/moondream2) by Vikhyatk
-- [FastAPI](https://fastapi.tiangolo.com/) for the web framework
-- [Docker](https://www.docker.com/) for containerization
+For issues and questions:
+- Check the documentation
+- Review the logs
+- Open an issue on GitHub
