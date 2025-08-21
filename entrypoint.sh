@@ -27,13 +27,24 @@ download_model() {
     echo "📥 Checking for Moondream2 0.5B ONNX model..."
     
     MODEL_PATH="/app/models/moondream2-onnx"
+    MODEL_FILE="/app/models/moondream2-onnx/moondream-0_5b-int8.mf"
     
-    if [ ! -d "$MODEL_PATH" ]; then
-        echo "📦 Downloading Moondream2 0.5B ONNX model file (mf.gz) from HuggingFace..."
-        
-        # Download the ONNX 0.5B archive using huggingface_hub without invoking transformers
-        python - <<'PY'
+    # Check if model file already exists and is valid
+    if [ -f "$MODEL_FILE" ] && [ -s "$MODEL_FILE" ]; then
+        echo "✅ Model file already exists and is valid: $MODEL_FILE"
+        echo "📊 Model file size: $(du -h "$MODEL_FILE" | cut -f1)"
+        return 0
+    fi
+    
+    echo "📦 Downloading Moondream2 0.5B ONNX model file (mf.gz) from HuggingFace..."
+    
+    # Create model directory
+    mkdir -p "$MODEL_PATH"
+    
+    # Download the ONNX 0.5B archive using huggingface_hub without invoking transformers
+    python - <<'PY'
 import os
+import sys
 from huggingface_hub import hf_hub_download
 import gzip
 import shutil
@@ -45,26 +56,41 @@ repo_id = 'vikhyatk/moondream2'
 revision = 'onnx'
 filename = 'moondream-0_5b-int8.mf.gz'
 
-os.makedirs('/app/models/moondream2-onnx', exist_ok=True)
-path = hf_hub_download(repo_id=repo_id, filename=filename, revision=revision, local_dir='/app/models/moondream2-onnx')
-print(f'✅ Downloaded {filename} to {path}')
-
-# Decompress to .mf (container-friendly)
-mf_path = path[:-3] if path.endswith('.gz') else path
-if path.endswith('.gz'):
-    with gzip.open(path, 'rb') as f_in, open(mf_path, 'wb') as f_out:
-        shutil.copyfileobj(f_in, f_out)
-    print(f'✅ Decompressed to {mf_path}')
-
-# Try to locate an embedded .onnx file if present (best-effort)
-onnx_guess = os.path.join('/app/models/moondream2-onnx', 'moondream-0_5b-int8.onnx')
-if not os.path.exists(onnx_guess):
-    # Leave a marker file to indicate the expected path and that extraction is needed
-    with open(os.path.join('/app/models/moondream2-onnx', 'README.txt'), 'w') as f:
-        f.write('Place the extracted .onnx file here as moondream-0_5b-int8.onnx or update MOONDREAM_ONNX_PATH.')
+try:
+    print(f'📥 Downloading {filename} from {repo_id}...')
+    path = hf_hub_download(repo_id=repo_id, filename=filename, revision=revision, local_dir='/app/models/moondream2-onnx')
+    print(f'✅ Downloaded {filename} to {path}')
+    
+    # Decompress to .mf (container-friendly)
+    mf_path = path[:-3] if path.endswith('.gz') else path
+    if path.endswith('.gz'):
+        print(f'🔄 Decompressing {path} to {mf_path}...')
+        with gzip.open(path, 'rb') as f_in, open(mf_path, 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        print(f'✅ Decompressed to {mf_path}')
+        
+        # Remove the compressed file to save space
+        os.remove(path)
+        print(f'🗑️  Removed compressed file: {path}')
+    
+    # Verify the final file
+    if os.path.exists(mf_path) and os.path.getsize(mf_path) > 0:
+        print(f'✅ Model file ready: {mf_path} ({os.path.getsize(mf_path)} bytes)')
+    else:
+        print(f'❌ Model file verification failed: {mf_path}')
+        sys.exit(1)
+        
+except Exception as e:
+    print(f'❌ Download failed: {e}')
+    sys.exit(1)
 PY
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Model download and setup completed successfully"
+        echo "📊 Final model file size: $(du -h "$MODEL_FILE" | cut -f1)"
     else
-        echo "✅ Model already exists at $MODEL_PATH"
+        echo "❌ Model download failed"
+        return 1
     fi
 }
 
@@ -78,9 +104,56 @@ check_gpu() {
     fi
 }
 
+# Function to validate model before starting
+validate_model_before_start() {
+    echo "🔍 Validating model before starting application..."
+    
+    python - <<'PY'
+import os
+import sys
+
+# Add app to path
+sys.path.insert(0, '/app')
+
+try:
+    from app.utils.model_checker import validate_model_setup
+    
+    model_path = os.getenv('MOONDREAM_MF_PATH', '/app/models/moondream2-onnx/moondream-0_5b-int8.mf')
+    is_valid, validation_info = validate_model_setup(model_path)
+    
+    if is_valid:
+        print(f"✅ Model validation successful: {validation_info['model_info']['size_bytes']} bytes")
+        sys.exit(0)
+    else:
+        print(f"❌ Model validation failed: {validation_info['error_message']}")
+        print("💡 Suggestions:")
+        for suggestion in validation_info.get('suggestions', []):
+            print(f"   - {suggestion}")
+        sys.exit(1)
+        
+except Exception as e:
+    print(f"❌ Model validation error: {e}")
+    sys.exit(1)
+PY
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Model validation passed"
+        return 0
+    else
+        echo "❌ Model validation failed"
+        return 1
+    fi
+}
+
 # Function to start the application
 start_app() {
     echo "🌙 Starting Moondream2 VLM API server..."
+    
+    # Validate model before starting
+    if ! validate_model_before_start; then
+        echo "❌ Cannot start application due to model validation failure"
+        exit 1
+    fi
     
     # Set environment variables for optimal performance
     export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128

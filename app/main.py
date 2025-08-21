@@ -25,6 +25,9 @@ import psutil
 # We run ONNX-only for the 0.5B path. Remove transformers usage.
 TRANSFORMERS_AVAILABLE = False
 
+# Import model validation utilities
+from app.utils.model_checker import validate_model_setup
+
 # Import queue management
 from app.services.queue_manager import queue_manager
 from app.models.schemas import (
@@ -102,12 +105,25 @@ class HealthResponse(BaseModel):
 
 # Initialize model function
 def initialize_model():
-    """Initialize Moondream2 model using the correct API pattern"""
+    """Initialize Moondream2 model using the correct API pattern with validation"""
     global model, tokenizer, device
 
     # Set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
+
+    # Validate model file first
+    logger.info("Validating model file...")
+    is_valid, validation_info = validate_model_setup(MF_MODEL_PATH)
+    
+    if not is_valid:
+        logger.error(f"Model validation failed: {validation_info['error_message']}")
+        logger.error("Model file suggestions:")
+        for suggestion in validation_info.get('suggestions', []):
+            logger.error(f"  - {suggestion}")
+        return False
+    
+    logger.info(f"Model validation successful: {validation_info['model_info']['size_bytes']} bytes")
 
     try:
         logger.info("Initializing Moondream2 0.5B model...")
@@ -441,10 +457,11 @@ async def caption_image(
 @app.get("/model/info")
 async def get_model_info():
     """Get model information"""
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-    
     meta = _current_model_meta()
+    
+    # Get model validation info
+    is_valid, validation_info = validate_model_setup(MF_MODEL_PATH)
+    
     return {
         "model_name": meta["model_name"],
         "model_type": meta["model_type"],
@@ -455,7 +472,27 @@ async def get_model_info():
         "memory_usage": get_memory_usage(),
         "gpu_memory": get_gpu_memory(),
         "queue_enabled": True,
-        "queue_workers": queue_manager.max_concurrent_jobs
+        "queue_workers": queue_manager.max_concurrent_jobs,
+        "model_loaded": model is not None,
+        "model_validation": {
+            "is_valid": is_valid,
+            "error_message": validation_info.get('error_message'),
+            "model_info": validation_info.get('model_info'),
+            "suggestions": validation_info.get('suggestions', [])
+        }
+    }
+
+@app.get("/model/validate")
+async def validate_model():
+    """Validate model file and return detailed status"""
+    is_valid, validation_info = validate_model_setup(MF_MODEL_PATH)
+    
+    return {
+        "is_valid": is_valid,
+        "model_path": MF_MODEL_PATH,
+        "validation_info": validation_info,
+        "model_loaded": model is not None,
+        "device": str(device) if device else None
     }
 
 if __name__ == "__main__":

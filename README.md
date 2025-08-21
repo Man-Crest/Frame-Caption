@@ -126,11 +126,55 @@ curl "http://localhost:8000/caption/stats"
 
 ## 🔍 Troubleshooting
 
-### Common Issues
+### Model Validation
 
-1. **Model Loading Failed**: Ensure the model file exists at the specified path
-2. **Memory Issues**: Reduce concurrent jobs or increase system RAM
-3. **Queue Full**: Increase queue size or wait for jobs to complete
+The system includes comprehensive model validation to ensure the Moondream2 model file is properly downloaded and accessible:
+
+#### Check Model Status
+```bash
+# Check model validation status
+curl http://localhost:8000/model/validate
+
+# Get detailed model information
+curl http://localhost:8000/model/info
+```
+
+#### Common Model Issues
+
+1. **Model File Missing**: The model file is not downloaded or in the wrong location
+   - **Solution**: The container will automatically download the model on first run
+   - **Check**: Verify `/app/models/moondream2-onnx/moondream-0_5b-int8.mf` exists
+
+2. **Model File Empty**: The downloaded file is corrupted or incomplete
+   - **Solution**: Remove the file and restart the container to re-download
+   - **Command**: `docker-compose down && docker-compose up --build`
+
+3. **Permission Issues**: The model file is not readable
+   - **Solution**: Check file permissions inside the container
+   - **Command**: `docker exec moondream2-vlm ls -la /app/models/moondream2-onnx/`
+
+#### Manual Model Validation
+```bash
+# Quick status check (recommended)
+python check_model_status.py
+
+# Test model validation locally
+python test_model_validation.py
+
+# Check model file directly
+docker exec moondream2-vlm python -c "
+from app.utils.model_checker import validate_model_setup
+is_valid, info = validate_model_setup('/app/models/moondream2-onnx/moondream-0_5b-int8.mf')
+print(f'Valid: {is_valid}')
+print(f'Info: {info}')
+"
+```
+
+### Other Common Issues
+
+1. **Memory Issues**: Reduce concurrent jobs or increase system RAM
+2. **Queue Full**: Increase queue size or wait for jobs to complete
+3. **Import Errors**: Ensure all dependencies are installed correctly
 
 ### Logs
 
