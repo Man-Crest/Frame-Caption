@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+import torch
 import moondream as md
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -101,25 +102,23 @@ class HealthResponse(BaseModel):
 
 # Initialize model function
 def initialize_model():
-    """Initialize Moondream2 model using selected backend (onnx or transformers)"""
+    """Initialize Moondream2 model using the correct API pattern"""
     global model, tokenizer, device
 
     # Set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    if BACKEND == "mf":
-        try:
-            logger.info("Initializing Moondream2 0.5B (mf) backend via moondream API...")
-            model = md.vl(model=MF_MODEL_PATH)
-            tokenizer = None
-            logger.info("Moondream (mf) backend initialized successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Moondream (mf) backend initialization failed: {e}")
-
-    logger.error("Moondream (mf) backend not initialized and transformers backend disabled. Cannot load model.")
-    return False
+    try:
+        logger.info("Initializing Moondream2 0.5B model...")
+        # Use the correct API pattern as shown in the example
+        model = md.vl(model=MF_MODEL_PATH)
+        tokenizer = None
+        logger.info("Moondream2 model initialized successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Moondream2 model initialization failed: {e}")
+        return False
 
 # Utility functions
 def decode_base64_image(image_data: str) -> Image.Image:
@@ -179,9 +178,10 @@ async def generate_caption_with_moondream2(request: CaptionRequest) -> CaptionRe
         # Decode image
         image = decode_base64_image(request.image_data)
         
-        # Generate caption using Moondream 0.5B .mf API (encode first)
+        # Generate caption using the correct Moondream2 API pattern
+        # First encode the image, then generate caption
         encoded_image = model.encode_image(image)
-        response = model.caption(encoded_image, length="normal")
+        response = model.caption(encoded_image)
         caption = response["caption"]
         
         processing_time = time.time() - start_time
@@ -309,7 +309,8 @@ async def describe_image(request: ImageDescriptionRequest):
         # Decode image
         image = decode_base64_image(request.image)
         
-        # Generate description using the correct Moondream2 API
+        # Generate description using the correct Moondream2 API pattern
+        # First encode the image, then query
         encoded_image = model.encode_image(image)
         response = model.query(encoded_image, request.prompt)
         answer = response["answer"]
@@ -362,7 +363,7 @@ async def describe_image_file(
         if image.mode != 'RGB':
             image = image.convert('RGB')
         
-        # Generate description using the correct Moondream2 API
+        # Generate description using the correct Moondream2 API pattern
         start_time = time.time()
         
         encoded_image = model.encode_image(image)
@@ -411,11 +412,11 @@ async def caption_image(
         if image.mode != 'RGB':
             image = image.convert('RGB')
         
-        # Generate caption using the correct Moondream2 API
+        # Generate caption using the correct Moondream2 API pattern
         start_time = time.time()
         
         encoded_image = model.encode_image(image)
-        response = model.caption(encoded_image, length=length)
+        response = model.caption(encoded_image)
         caption = response["caption"]
         
         processing_time = time.time() - start_time

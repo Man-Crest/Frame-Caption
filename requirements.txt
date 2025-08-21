@@ -1,6 +1,7 @@
 # Core dependencies for Moondream 0.5B .mf runtime
 moondream==0.1.1
 huggingface_hub>=0.21.0
+torch>=2.0.0
 
 # Image processing
 Pillow>=10.0.0

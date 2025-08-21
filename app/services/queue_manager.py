@@ -297,10 +297,7 @@ class SimpleQueueManager:
         # For now, return a placeholder
         return CaptionResult(
             caption="[Placeholder: Moondream2 caption generation will be implemented]",
-            processing_time=0.0,
-            eventId="",
-            alias="",
-            timestamp=datetime.now()
+            processing_time=0.0
         )
 
     async def _generate_surveillance_caption(self, request: SurveillanceRequest) -> CaptionResult:
