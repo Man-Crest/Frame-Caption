@@ -721,6 +721,175 @@ async def caption_image(
         logger.error(f"Error generating caption: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Caption generation failed: {str(e)}")
 
+@app.post("/caption/direct")
+async def caption_image_direct(
+    file: UploadFile = File(...),
+    prompt: str = "Describe what you see in this image"
+):
+    """Direct caption generation without queue - for VLM testing"""
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    try:
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        
+        # Read and process image
+        image_data = await file.read()
+        image = Image.open(io.BytesIO(image_data))
+        
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Generate caption using the correct Moondream2 API pattern
+        start_time = time.time()
+        
+        encoded_image = model.encode_image(image)
+        response = model.caption(encoded_image)
+        caption = response["caption"]
+        
+        processing_time = time.time() - start_time
+        
+        meta = _current_model_meta()
+        return {
+            "caption": caption,
+            "prompt": prompt,
+            "processing_time": processing_time,
+            "model_info": {
+                "model": meta["model_name"],
+                "model_id": meta["model_id"],
+                "revision": meta["revision"],
+                "device": str(device)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating direct caption: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Direct caption generation failed: {str(e)}")
+
+@app.post("/caption/direct/base64")
+async def caption_image_direct_base64(request: CaptionRequest):
+    """Direct caption generation from base64 image - for VLM testing"""
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    try:
+        # Decode image
+        image = decode_base64_image(request.image_data)
+        
+        # Generate caption using the correct Moondream2 API pattern
+        start_time = time.time()
+        
+        encoded_image = model.encode_image(image)
+        response = model.caption(encoded_image)
+        caption = response["caption"]
+        
+        processing_time = time.time() - start_time
+        
+        meta = _current_model_meta()
+        return {
+            "caption": caption,
+            "prompt": request.prompt,
+            "processing_time": processing_time,
+            "model_info": {
+                "model": meta["model_name"],
+                "model_id": meta["model_id"],
+                "revision": meta["revision"],
+                "device": str(device)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating direct caption from base64: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Direct caption generation failed: {str(e)}")
+
+@app.post("/query/direct")
+async def query_image_direct(
+    file: UploadFile = File(...),
+    question: str = "What do you see in this image?"
+):
+    """Direct image query without queue - for VLM testing"""
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    try:
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        
+        # Read and process image
+        image_data = await file.read()
+        image = Image.open(io.BytesIO(image_data))
+        
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Generate answer using the correct Moondream2 API pattern
+        start_time = time.time()
+        
+        encoded_image = model.encode_image(image)
+        response = model.query(encoded_image, question)
+        answer = response["answer"]
+        
+        processing_time = time.time() - start_time
+        
+        meta = _current_model_meta()
+        return {
+            "answer": answer,
+            "question": question,
+            "processing_time": processing_time,
+            "model_info": {
+                "model": meta["model_name"],
+                "model_id": meta["model_id"],
+                "revision": meta["revision"],
+                "device": str(device)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating direct query answer: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Direct query generation failed: {str(e)}")
+
+@app.post("/query/direct/base64")
+async def query_image_direct_base64(
+    image_data: str,
+    question: str = "What do you see in this image?"
+):
+    """Direct image query from base64 - for VLM testing"""
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    try:
+        # Decode image
+        image = decode_base64_image(image_data)
+        
+        # Generate answer using the correct Moondream2 API pattern
+        start_time = time.time()
+        
+        encoded_image = model.encode_image(image)
+        response = model.query(encoded_image, question)
+        answer = response["answer"]
+        
+        processing_time = time.time() - start_time
+        
+        meta = _current_model_meta()
+        return {
+            "answer": answer,
+            "question": question,
+            "processing_time": processing_time,
+            "model_info": {
+                "model": meta["model_name"],
+                "model_id": meta["model_id"],
+                "revision": meta["revision"],
+                "device": str(device)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating direct query answer from base64: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Direct query generation failed: {str(e)}")
+
 @app.get("/model/info")
 async def get_model_info():
     """Get model information"""
