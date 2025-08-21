@@ -9,9 +9,6 @@ import base64
 from PIL import Image
 import numpy as np
 
-# Add the app directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'app'))
-
 def test_moondream_api():
     """Test the Moondream2 API with the correct pattern"""
     
@@ -27,6 +24,7 @@ def test_moondream_api():
         model_path = os.environ['MOONDREAM_MF_PATH']
         if os.path.exists(model_path):
             print(f"✅ Model file found at: {model_path}")
+            print(f"📊 File size: {os.path.getsize(model_path):,} bytes")
         else:
             print(f"⚠️  Model file not found at: {model_path}")
             print("This is expected if running outside Docker container")

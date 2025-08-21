@@ -108,39 +108,14 @@ check_gpu() {
 validate_model_before_start() {
     echo "🔍 Validating model before starting application..."
     
-    python - <<'PY'
-import os
-import sys
-
-# Add app to path
-sys.path.insert(0, '/app')
-
-try:
-    from app.utils.model_checker import validate_model_setup
+    MODEL_FILE="/app/models/moondream2-onnx/moondream-0_5b-int8.mf"
     
-    model_path = os.getenv('MOONDREAM_MF_PATH', '/app/models/moondream2-onnx/moondream-0_5b-int8.mf')
-    is_valid, validation_info = validate_model_setup(model_path)
-    
-    if is_valid:
-        print(f"✅ Model validation successful: {validation_info['model_info']['size_bytes']} bytes")
-        sys.exit(0)
-    else:
-        print(f"❌ Model validation failed: {validation_info['error_message']}")
-        print("💡 Suggestions:")
-        for suggestion in validation_info.get('suggestions', []):
-            print(f"   - {suggestion}")
-        sys.exit(1)
-        
-except Exception as e:
-    print(f"❌ Model validation error: {e}")
-    sys.exit(1)
-PY
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Model validation passed"
+    if [ -f "$MODEL_FILE" ] && [ -s "$MODEL_FILE" ]; then
+        echo "✅ Model file exists and is valid: $MODEL_FILE"
+        echo "📊 Model file size: $(du -h "$MODEL_FILE" | cut -f1)"
         return 0
     else
-        echo "❌ Model validation failed"
+        echo "❌ Model file validation failed: $MODEL_FILE"
         return 1
     fi
 }

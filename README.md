@@ -158,16 +158,11 @@ curl http://localhost:8000/model/info
 # Quick status check (recommended)
 python check_model_status.py
 
-# Test model validation locally
-python test_model_validation.py
+# Test API functionality
+python test_moondream_api.py
 
 # Check model file directly
-docker exec moondream2-vlm python -c "
-from app.utils.model_checker import validate_model_setup
-is_valid, info = validate_model_setup('/app/models/moondream2-onnx/moondream-0_5b-int8.mf')
-print(f'Valid: {is_valid}')
-print(f'Info: {info}')
-"
+docker exec moondream2-vlm ls -la /app/models/moondream2-onnx/
 ```
 
 ### Other Common Issues

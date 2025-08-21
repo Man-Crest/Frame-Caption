@@ -8,8 +8,12 @@ import os
 import io
 import base64
 import time
+import uuid
+import asyncio
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+from datetime import datetime
+from enum import Enum
 
 import numpy as np
 from PIL import Image
@@ -21,23 +25,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from loguru import logger
 import psutil
-
-# We run ONNX-only for the 0.5B path. Remove transformers usage.
-TRANSFORMERS_AVAILABLE = False
-
-# Import model validation utilities
-from app.utils.model_checker import validate_model_setup
-
-# Import queue management
-from app.services.queue_manager import queue_manager
-from app.models.schemas import (
-    CaptionRequest,
-    CaptionResult,
-    JobStatus,
-    JobResponse,
-    JobStatusResponse,
-    QueueStats
-)
 
 # Configure logging
 logger.add("logs/moondream2.log", rotation="10 MB", level="INFO")
@@ -67,21 +54,48 @@ device = None
 BACKEND = os.getenv("MOONDREAM_BACKEND", "mf").lower()
 MF_MODEL_PATH = os.getenv("MOONDREAM_MF_PATH", "/app/models/moondream2-onnx/moondream-0_5b-int8.mf")
 
-def _current_model_meta() -> Dict[str, Any]:
-    if BACKEND == "onnx":
-        return {
-            "model_name": "Moondream2-0.5B-ONNX",
-            "model_type": "Vision Language Model (ONNX)",
-            "model_id": "vikhyatk/moondream2",
-            "revision": "onnx",
-        }
-    else:
-        return {
-            "model_name": "Moondream2",
-            "model_type": "Vision Language Model",
-            "model_id": "vikhyatk/moondream2",
-            "revision": "2025-06-21",
-        }
+# Simple queue management
+class JobStatus(str, Enum):
+    """Job processing status"""
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class CaptionRequest(BaseModel):
+    """Request model for caption generation"""
+    image_data: str = Field(..., description="Base64 encoded image")
+    webhook_url: Optional[str] = Field(None, description="Webhook URL for result delivery")
+    prompt: str = Field(default="Describe what you see in this image", description="Caption prompt")
+
+class CaptionResult(BaseModel):
+    """Result model for caption generation"""
+    caption: str = Field(..., description="Generated image caption")
+    processing_time: float = Field(..., description="Processing time in seconds")
+
+class JobResponse(BaseModel):
+    """Response model for job creation"""
+    job_id: str = Field(..., description="Job identifier")
+    status: JobStatus = Field(..., description="Current status")
+    message: str = Field(..., description="Status message")
+    created_at: datetime = Field(..., description="Job creation timestamp")
+
+class JobStatusResponse(BaseModel):
+    """Response model for job status check"""
+    job_id: str = Field(..., description="Job identifier")
+    status: JobStatus = Field(..., description="Current status")
+    message: str = Field(..., description="Status message")
+    created_at: datetime = Field(..., description="Job creation timestamp")
+    completed_at: Optional[datetime] = Field(None, description="Completion timestamp")
+    result: Optional[CaptionResult] = Field(None, description="Caption result")
+    error_message: Optional[str] = Field(None, description="Error message if failed")
+
+class QueueStats(BaseModel):
+    """Queue statistics model"""
+    total_jobs: int = Field(..., description="Total number of jobs")
+    active_jobs: int = Field(..., description="Currently active jobs")
+    queue_size: int = Field(..., description="Jobs waiting in queue")
+    status_counts: Dict[str, int] = Field(..., description="Job counts by status")
 
 # Pydantic models (keeping existing ones for backward compatibility)
 class ImageDescriptionRequest(BaseModel):
@@ -102,6 +116,291 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     gpu_available: bool
     memory_usage: Dict[str, Any]
+
+# Simple Queue Manager (inline to avoid import issues)
+class SimpleQueueManager:
+    """Simple queue manager for caption generation"""
+    
+    def __init__(self, max_workers: int = 2, max_queue_size: int = 50):
+        # Queue management
+        self.processing_queue = asyncio.Queue(maxsize=max_queue_size)
+        self.jobs: Dict[str, JobStatusResponse] = {}
+        self.active_jobs: Dict[str, asyncio.Task] = {}
+        
+        # Configuration
+        self.max_concurrent_jobs = max_workers
+        self.max_queue_size = max_queue_size
+        
+        # Worker task
+        self.worker_task: Optional[asyncio.Task] = None
+        self.is_running = False
+        
+    async def start(self):
+        """Start the queue manager and worker"""
+        if not self.is_running:
+            self.is_running = True
+            self.worker_task = asyncio.create_task(self._worker_loop())
+            logger.info(f"Queue manager started with {self.max_concurrent_jobs} workers")
+    
+    async def stop(self):
+        """Stop the queue manager"""
+        self.is_running = False
+        if self.worker_task:
+            self.worker_task.cancel()
+            try:
+                await self.worker_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Queue manager stopped")
+    
+    async def add_caption_job(
+        self, 
+        image_data: str,
+        webhook_url: Optional[str] = None,
+        prompt: str = "Describe what you see in this image"
+    ) -> str:
+        """Add a caption generation job to the queue"""
+        try:
+            # Generate job ID
+            job_id = str(uuid.uuid4())
+            
+            # Create request
+            request = CaptionRequest(
+                image_data=image_data,
+                webhook_url=webhook_url,
+                prompt=prompt
+            )
+            
+            # Check if queue is full
+            if self.processing_queue.qsize() >= self.max_queue_size:
+                logger.warning(f"Queue full ({self.max_queue_size}), rejecting new job")
+                raise Exception("Queue is full, please try again later")
+            
+            # Add to queue
+            await self.processing_queue.put((job_id, request))
+            
+            # Create job response
+            job_response = JobStatusResponse(
+                job_id=job_id,
+                status=JobStatus.QUEUED,
+                message="Caption generation job queued for processing",
+                created_at=datetime.now()
+            )
+            
+            self.jobs[job_id] = job_response
+            
+            logger.info(f"Caption job {job_id} added to queue")
+            return job_id
+            
+        except Exception as e:
+            logger.error(f"Error adding caption job: {e}")
+            raise
+    
+    async def _worker_loop(self):
+        """Main worker loop for processing jobs"""
+        while self.is_running:
+            try:
+                # Wait for available worker slot
+                while len(self.active_jobs) >= self.max_concurrent_jobs:
+                    await asyncio.sleep(0.1)
+                
+                # Get next job from queue
+                try:
+                    job_id, request = await asyncio.wait_for(
+                        self.processing_queue.get(), 
+                        timeout=1.0
+                    )
+                except asyncio.TimeoutError:
+                    continue
+                
+                # Create task for processing
+                task = asyncio.create_task(self._process_job(job_id, request))
+                self.active_jobs[job_id] = task
+                
+            except Exception as e:
+                logger.error(f"Error in worker loop: {e}")
+                await asyncio.sleep(1)
+    
+    async def _process_job(self, job_id: str, request: CaptionRequest):
+        """Process a single caption generation job"""
+        start_time = time.time()
+        
+        try:
+            # Update status to processing
+            await self._update_job_status(
+                job_id, 
+                JobStatus.PROCESSING, 
+                "Processing image with Moondream2"
+            )
+            
+            # Process with Moondream2
+            result = await self._generate_caption(request)
+            
+            # Update status to completed
+            processing_time = time.time() - start_time
+            result.processing_time = processing_time
+            
+            await self._update_job_status(
+                job_id, 
+                JobStatus.COMPLETED, 
+                "Caption generation completed",
+                result=result
+            )
+            
+            logger.info(f"Job {job_id} completed in {processing_time:.2f}s")
+            
+        except Exception as e:
+            processing_time = time.time() - start_time
+            error_msg = f"Caption generation failed: {str(e)}"
+            
+            await self._update_job_status(
+                job_id, 
+                JobStatus.FAILED, 
+                error_msg,
+                error_message=error_msg
+            )
+            
+            logger.error(f"Job {job_id} failed: {e}")
+        
+        finally:
+            # Remove from active jobs
+            if job_id in self.active_jobs:
+                del self.active_jobs[job_id]
+
+    async def _generate_caption(self, request: CaptionRequest) -> CaptionResult:
+        """Generate caption using Moondream2 model"""
+        if model is None:
+            raise Exception("Model not loaded")
+        
+        start_time = time.time()
+        
+        try:
+            # Decode image
+            image = decode_base64_image(request.image_data)
+            
+            # Generate caption using the correct Moondream2 API pattern
+            # First encode the image, then generate caption
+            encoded_image = model.encode_image(image)
+            response = model.caption(encoded_image)
+            caption = response["caption"]
+            
+            processing_time = time.time() - start_time
+            
+            return CaptionResult(
+                caption=caption,
+                processing_time=processing_time
+            )
+            
+        except Exception as e:
+            logger.error(f"Error generating caption with Moondream2: {str(e)}")
+            raise
+    
+    async def get_job_status(self, job_id: str) -> Optional[JobStatusResponse]:
+        """Get the status of a specific job"""
+        return self.jobs.get(job_id)
+    
+    async def _update_job_status(
+        self, 
+        job_id: str, 
+        status: JobStatus, 
+        message: str = "",
+        result: Optional[CaptionResult] = None,
+        error_message: Optional[str] = None
+    ):
+        """Update the status of a job"""
+        try:
+            if job_id in self.jobs:
+                self.jobs[job_id].status = status
+                self.jobs[job_id].message = message
+                
+                if result:
+                    self.jobs[job_id].result = result
+                
+                if error_message:
+                    self.jobs[job_id].error_message = error_message
+                
+                if status == JobStatus.COMPLETED:
+                    self.jobs[job_id].completed_at = datetime.now()
+                
+                logger.debug(f"Job {job_id} status updated to {status.value}")
+            
+        except Exception as e:
+            logger.error(f"Error updating job status: {e}")
+    
+    async def get_queue_stats(self) -> QueueStats:
+        """Get queue statistics"""
+        try:
+            total_jobs = len(self.jobs)
+            status_counts = {}
+            
+            for job in self.jobs.values():
+                status = job.status.value
+                status_counts[status] = status_counts.get(status, 0) + 1
+            
+            return QueueStats(
+                total_jobs=total_jobs,
+                active_jobs=len(self.active_jobs),
+                queue_size=self.processing_queue.qsize(),
+                status_counts=status_counts
+            )
+            
+        except Exception as e:
+            logger.error(f"Error getting queue stats: {e}")
+            raise
+
+# Global queue manager instance
+queue_manager = SimpleQueueManager()
+
+def _current_model_meta() -> Dict[str, Any]:
+    if BACKEND == "onnx":
+        return {
+            "model_name": "Moondream2-0.5B-ONNX",
+            "model_type": "Vision Language Model (ONNX)",
+            "model_id": "vikhyatk/moondream2",
+            "revision": "onnx",
+        }
+    else:
+        return {
+            "model_name": "Moondream2",
+            "model_type": "Vision Language Model",
+            "model_id": "vikhyatk/moondream2",
+            "revision": "2025-06-21",
+        }
+
+# Model validation function
+def validate_model_setup(model_path: str) -> tuple[bool, dict]:
+    """Validate model file"""
+    try:
+        if not os.path.exists(model_path):
+            return False, {
+                "is_valid": False,
+                "error_message": f"Model file does not exist: {model_path}",
+                "model_info": {"exists": False, "size_bytes": 0},
+                "suggestions": [f"Download model file to: {model_path}"]
+            }
+        
+        file_size = os.path.getsize(model_path)
+        if file_size == 0:
+            return False, {
+                "is_valid": False,
+                "error_message": f"Model file is empty: {model_path}",
+                "model_info": {"exists": True, "size_bytes": 0},
+                "suggestions": [f"Re-download model file: {model_path}"]
+            }
+        
+        return True, {
+            "is_valid": True,
+            "error_message": None,
+            "model_info": {"exists": True, "size_bytes": file_size},
+            "suggestions": []
+        }
+    except Exception as e:
+        return False, {
+            "is_valid": False,
+            "error_message": f"Error checking model: {str(e)}",
+            "model_info": {"exists": False, "size_bytes": 0},
+            "suggestions": ["Check file permissions and try again"]
+        }
 
 # Initialize model function
 def initialize_model():
@@ -181,38 +480,6 @@ def get_gpu_memory() -> Optional[Dict[str, Any]]:
             "total_mb": torch.cuda.get_device_properties(0).total_memory / 1024 / 1024
         }
     return {"error": "No GPU available"}
-
-# Moondream2 caption generation function for queue
-async def generate_caption_with_moondream2(request: CaptionRequest) -> CaptionResult:
-    """Generate caption using Moondream2 model for queue system"""
-    if model is None:
-        raise Exception("Model not loaded")
-    
-    start_time = time.time()
-    
-    try:
-        # Decode image
-        image = decode_base64_image(request.image_data)
-        
-        # Generate caption using the correct Moondream2 API pattern
-        # First encode the image, then generate caption
-        encoded_image = model.encode_image(image)
-        response = model.caption(encoded_image)
-        caption = response["caption"]
-        
-        processing_time = time.time() - start_time
-        
-        return CaptionResult(
-            caption=caption,
-            processing_time=processing_time
-        )
-        
-    except Exception as e:
-        logger.error(f"Error generating caption with Moondream2: {str(e)}")
-        raise
-
-# Override the placeholder method in queue manager
-queue_manager._generate_caption = generate_caption_with_moondream2
 
 # API endpoints
 @app.on_event("startup")
