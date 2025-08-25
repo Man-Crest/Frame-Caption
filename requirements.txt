@@ -1,29 +1,19 @@
-# Core dependencies for Moondream 0.5B .mf runtime
-moondream==0.1.1
-huggingface_hub>=0.21.0
-torch>=2.0.0
+# Core dependencies for Moondream 0.5B .mf runtime (CPU-only)
+moondream==0.0.5
 
 # Image processing
 Pillow>=10.0.0
-opencv-python>=4.8.0
 
 # Web framework
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 
 # Utilities
-numpy>=1.24.0
-requests>=2.31.0
-python-multipart>=0.0.6
 pydantic>=2.5.0
 
 # Monitoring and logging
 loguru>=0.7.0
 psutil>=5.9.0
 
-# Queue management and async HTTP
-aiohttp>=3.8.0
-asyncio-mqtt>=0.11.0
-
-# Additional utilities for queue system
-python-dateutil>=2.8.0
+# File upload support
+python-multipart

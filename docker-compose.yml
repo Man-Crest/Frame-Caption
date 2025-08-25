@@ -8,12 +8,7 @@ services:
     container_name: moondream2-vlm
     ports:
       - "8000:8000"
-    volumes:
-      - ./data:/app/data:ro
     environment:
-      - PYTHONUNBUFFERED=1
-      - TOKENIZERS_PARALLELISM=false
-      - MOONDREAM_BACKEND=mf
       - MOONDREAM_MF_PATH=/app/models/moondream2-onnx/moondream-0_5b-int8.mf
     # CPU-only configuration (no GPU runtime required)
     restart: unless-stopped

@@ -15,13 +15,10 @@ from pathlib import Path
 from datetime import datetime
 from enum import Enum
 
-import numpy as np
 from PIL import Image
-import torch
 import moondream as md
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from loguru import logger
 import psutil
@@ -50,7 +47,7 @@ app.add_middleware(
 # Global variables for model
 model = None
 tokenizer = None
-device = None
+device = "cpu"  # Fixed to CPU for 0.5B ONNX model
 BACKEND = os.getenv("MOONDREAM_BACKEND", "mf").lower()
 MF_MODEL_PATH = os.getenv("MOONDREAM_MF_PATH", "/app/models/moondream2-onnx/moondream-0_5b-int8.mf")
 
@@ -367,66 +364,33 @@ def _current_model_meta() -> Dict[str, Any]:
             "revision": "2025-06-21",
         }
 
-# Model validation function
-def validate_model_setup(model_path: str) -> tuple[bool, dict]:
-    """Validate model file"""
-    try:
-        if not os.path.exists(model_path):
-            return False, {
-                "is_valid": False,
-                "error_message": f"Model file does not exist: {model_path}",
-                "model_info": {"exists": False, "size_bytes": 0},
-                "suggestions": [f"Download model file to: {model_path}"]
-            }
-        
-        file_size = os.path.getsize(model_path)
-        if file_size == 0:
-            return False, {
-                "is_valid": False,
-                "error_message": f"Model file is empty: {model_path}",
-                "model_info": {"exists": True, "size_bytes": 0},
-                "suggestions": [f"Re-download model file: {model_path}"]
-            }
-        
-        return True, {
-            "is_valid": True,
-            "error_message": None,
-            "model_info": {"exists": True, "size_bytes": file_size},
-            "suggestions": []
-        }
-    except Exception as e:
-        return False, {
-            "is_valid": False,
-            "error_message": f"Error checking model: {str(e)}",
-            "model_info": {"exists": False, "size_bytes": 0},
-            "suggestions": ["Check file permissions and try again"]
-        }
+
 
 # Initialize model function
 def initialize_model():
-    """Initialize Moondream2 model using the correct API pattern with validation"""
+    """Initialize Moondream2 model using the working simple approach (CPU-only)"""
     global model, tokenizer, device
 
-    # Set device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Fixed to CPU for 0.5B ONNX model
+    device = "cpu"
     logger.info(f"Using device: {device}")
 
-    # Validate model file first
-    logger.info("Validating model file...")
-    is_valid, validation_info = validate_model_setup(MF_MODEL_PATH)
-    
-    if not is_valid:
-        logger.error(f"Model validation failed: {validation_info['error_message']}")
-        logger.error("Model file suggestions:")
-        for suggestion in validation_info.get('suggestions', []):
-            logger.error(f"  - {suggestion}")
+    # Simple model file check
+    if not os.path.exists(MF_MODEL_PATH):
+        logger.error(f"Model file not found: {MF_MODEL_PATH}")
         return False
     
-    logger.info(f"Model validation successful: {validation_info['model_info']['size_bytes']} bytes")
+    # Check file size (should be several MB)
+    file_size = os.path.getsize(MF_MODEL_PATH)
+    if file_size < 1000000:  # Less than 1MB
+        logger.error(f"Model file seems too small: {file_size} bytes")
+        return False
+    
+    logger.info(f"Model file found: {MF_MODEL_PATH} ({file_size} bytes)")
 
     try:
-        logger.info("Initializing Moondream2 0.5B model...")
-        # Use the correct API pattern as shown in the example
+        logger.info("Initializing Moondream2 0.5B model (CPU-only)...")
+        # Use the working simple approach
         model = md.vl(model=MF_MODEL_PATH)
         tokenizer = None
         logger.info("Moondream2 model initialized successfully")
@@ -467,19 +431,7 @@ def get_memory_usage() -> Dict[str, float]:
         "percent": process.memory_percent()
     }
 
-def get_gpu_memory() -> Optional[Dict[str, Any]]:
-    """Get GPU memory usage if available"""
-    try:
-        import torch
-    except Exception:
-        torch = None
-    if torch and torch.cuda.is_available():
-        return {
-            "allocated_mb": torch.cuda.memory_allocated() / 1024 / 1024,
-            "cached_mb": torch.cuda.memory_reserved() / 1024 / 1024,
-            "total_mb": torch.cuda.get_device_properties(0).total_memory / 1024 / 1024
-        }
-    return {"error": "No GPU available"}
+
 
 # API endpoints
 @app.on_event("startup")
@@ -511,16 +463,14 @@ async def root():
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint"""
-    gpu_memory = get_gpu_memory()
-    
+    """Health check endpoint (CPU-only)"""
     return HealthResponse(
         status="healthy" if model is not None else "unhealthy",
         model_loaded=model is not None,
-        gpu_available=torch.cuda.is_available(),
+        gpu_available=False,  # Fixed to False for CPU-only
         memory_usage={
             "system": get_memory_usage(),
-            "gpu": gpu_memory if gpu_memory else {}
+            "gpu": {"error": "CPU-only deployment"}
         }
     )
 
@@ -892,43 +842,46 @@ async def query_image_direct_base64(
 
 @app.get("/model/info")
 async def get_model_info():
-    """Get model information"""
+    """Get model information (CPU-only)"""
     meta = _current_model_meta()
     
-    # Get model validation info
-    is_valid, validation_info = validate_model_setup(MF_MODEL_PATH)
+    # Simple model validation
+    is_valid = os.path.exists(MF_MODEL_PATH) and os.path.getsize(MF_MODEL_PATH) > 1000000
+    file_size = os.path.getsize(MF_MODEL_PATH) if os.path.exists(MF_MODEL_PATH) else 0
     
     return {
         "model_name": meta["model_name"],
         "model_type": meta["model_type"],
         "model_id": meta["model_id"],
         "revision": meta["revision"],
-        "device": str(device),
-        "gpu_available": False,
+        "device": device,  # Will be "cpu"
+        "gpu_available": False,  # Fixed to False
         "memory_usage": get_memory_usage(),
-        "gpu_memory": get_gpu_memory(),
+        "gpu_memory": {"error": "CPU-only deployment"},
         "queue_enabled": True,
         "queue_workers": queue_manager.max_concurrent_jobs,
         "model_loaded": model is not None,
         "model_validation": {
             "is_valid": is_valid,
-            "error_message": validation_info.get('error_message'),
-            "model_info": validation_info.get('model_info'),
-            "suggestions": validation_info.get('suggestions', [])
+            "model_path": MF_MODEL_PATH,
+            "file_size": file_size,
+            "exists": os.path.exists(MF_MODEL_PATH)
         }
     }
 
 @app.get("/model/validate")
 async def validate_model():
     """Validate model file and return detailed status"""
-    is_valid, validation_info = validate_model_setup(MF_MODEL_PATH)
+    is_valid = os.path.exists(MF_MODEL_PATH) and os.path.getsize(MF_MODEL_PATH) > 1000000
+    file_size = os.path.getsize(MF_MODEL_PATH) if os.path.exists(MF_MODEL_PATH) else 0
     
     return {
         "is_valid": is_valid,
         "model_path": MF_MODEL_PATH,
-        "validation_info": validation_info,
+        "file_size": file_size,
+        "exists": os.path.exists(MF_MODEL_PATH),
         "model_loaded": model is not None,
-        "device": str(device) if device else None
+        "device": device  # Will be "cpu"
     }
 
 if __name__ == "__main__":

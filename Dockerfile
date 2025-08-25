@@ -1,52 +1,29 @@
-# Use Python base image for simplicity
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-
-# Set working directory
-WORKDIR /app
-ENV PYTHONPATH=/app
-
-# Install system dependencies
+# System deps (minimal for CPU-only)
 RUN apt-get update && apt-get install -y \
-    git \
-    git-lfs \
     curl \
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install and configure Git LFS
-RUN git lfs install
+# Set workdir
+WORKDIR /app
 
-# Upgrade pip
-RUN pip install --upgrade pip
-
-# Copy requirements first for better caching
+# Copy requirements first (better caching)
 COPY requirements.txt .
 
-# Install Python dependencies from requirements.txt
+# Install Python dependencies with optimizations
 RUN pip install --no-cache-dir -r requirements.txt
 
-## moondream installed via PyPI in requirements.txt
-
-# Skip pre-downloading the model during build to avoid failures; it will download at runtime
-
-# Verify moondream installation
-RUN python -c "import moondream, sys; print('✅ moondream verified during build')"
-
 # Copy application code
-COPY . .
+COPY app/ ./app/
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
-# Create directories
-RUN mkdir -p /app/data /app/logs
-
-# Set permissions
-RUN chmod +x /app/entrypoint.sh
+# Create logs directory
+RUN mkdir -p logs
 
 # Expose port
 EXPOSE 8000
 
-# Set entrypoint
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Run entrypoint script
+ENTRYPOINT ["./entrypoint.sh"]

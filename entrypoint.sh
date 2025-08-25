@@ -36,62 +36,30 @@ download_model() {
         return 0
     fi
     
-    echo "📦 Downloading Moondream2 0.5B ONNX model file (mf.gz) from HuggingFace..."
+    echo "📦 Downloading Moondream2 0.5B ONNX model file from HuggingFace..."
     
     # Create model directory
     mkdir -p "$MODEL_PATH"
     
-    # Download the ONNX 0.5B archive using huggingface_hub without invoking transformers
-    python - <<'PY'
-import os
-import sys
-from huggingface_hub import hf_hub_download
-import gzip
-import shutil
-
-os.environ['HF_HOME'] = '/app/models'
-os.environ['TRANSFORMERS_CACHE'] = '/app/models'
-
-repo_id = 'vikhyatk/moondream2'
-revision = 'onnx'
-filename = 'moondream-0_5b-int8.mf.gz'
-
-try:
-    print(f'📥 Downloading {filename} from {repo_id}...')
-    path = hf_hub_download(repo_id=repo_id, filename=filename, revision=revision, local_dir='/app/models/moondream2-onnx')
-    print(f'✅ Downloaded {filename} to {path}')
+    # Download with curl and gunzip (simple and reliable method)
+    MODEL_URL="https://huggingface.co/vikhyatk/moondream2/resolve/onnx/moondream-0_5b-int8.mf.gz"
     
-    # Decompress to .mf (container-friendly)
-    mf_path = path[:-3] if path.endswith('.gz') else path
-    if path.endswith('.gz'):
-        print(f'🔄 Decompressing {path} to {mf_path}...')
-        with gzip.open(path, 'rb') as f_in, open(mf_path, 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
-        print(f'✅ Decompressed to {mf_path}')
-        
-        # Remove the compressed file to save space
-        os.remove(path)
-        print(f'🗑️  Removed compressed file: {path}')
-    
-    # Verify the final file
-    if os.path.exists(mf_path) and os.path.getsize(mf_path) > 0:
-        print(f'✅ Model file ready: {mf_path} ({os.path.getsize(mf_path)} bytes)')
-    else:
-        print(f'❌ Model file verification failed: {mf_path}')
-        sys.exit(1)
-        
-except Exception as e:
-    print(f'❌ Download failed: {e}')
-    sys.exit(1)
-PY
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Model download and setup completed successfully"
-        echo "📊 Final model file size: $(du -h "$MODEL_FILE" | cut -f1)"
+    echo "Downloading from: $MODEL_URL"
+    if curl -L "$MODEL_URL" | gunzip > "$MODEL_FILE"; then
+        echo "✅ Model downloaded successfully!"
     else
-        echo "❌ Model download failed"
+        echo "❌ Failed to download model"
         return 1
     fi
+    
+    # Final verification
+    if [ ! -f "$MODEL_FILE" ] || [ ! -s "$MODEL_FILE" ]; then
+        echo "❌ Model file is missing or empty after download"
+        return 1
+    fi
+    
+    echo "✅ Model download and setup completed successfully"
+    echo "📊 Final model file size: $(du -h "$MODEL_FILE" | cut -f1)"
 }
 
 # Function to check GPU availability
@@ -108,7 +76,7 @@ check_gpu() {
 validate_model_before_start() {
     echo "🔍 Validating model before starting application..."
     
-    MODEL_FILE="/app/models/moondream2-onnx/moondream-0_5b-int8.mf"
+        MODEL_FILE="/app/models/moondream2-onnx/moondream-0_5b-int8.mf"
     
     if [ -f "$MODEL_FILE" ] && [ -s "$MODEL_FILE" ]; then
         echo "✅ Model file exists and is valid: $MODEL_FILE"
