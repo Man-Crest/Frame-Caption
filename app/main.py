@@ -17,7 +17,7 @@ from enum import Enum
 
 from PIL import Image
 import moondream as md
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from loguru import logger
@@ -50,6 +50,9 @@ tokenizer = None
 device = "cpu"  # Fixed to CPU for 0.5B ONNX model
 BACKEND = os.getenv("MOONDREAM_BACKEND", "mf").lower()
 MF_MODEL_PATH = os.getenv("MOONDREAM_MF_PATH", "/app/models/moondream2-onnx/moondream-0_5b-int8.mf")
+
+# Constants
+MAX_IMAGE_SIZE = 1024  # Maximum image size for processing
 
 # Simple queue management
 class JobStatus(str, Enum):
@@ -672,51 +675,49 @@ async def caption_image(
         raise HTTPException(status_code=500, detail=f"Caption generation failed: {str(e)}")
 
 @app.post("/caption/direct")
-async def caption_image_direct(
-    file: UploadFile = File(...),
-    prompt: str = "Describe what you see in this image"
-):
-    """Direct caption generation without queue - for VLM testing"""
+async def generate_caption(file: UploadFile = File(...), question: str | None = Form(None)):
+    """Generate caption and optionally answer a question about the image"""
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     
     try:
+        # Start timing
+        start_time = time.time()
+        
         # Validate file type
         if not file.content_type.startswith('image/'):
             raise HTTPException(status_code=400, detail="File must be an image")
         
-        # Read and process image
-        image_data = await file.read()
-        image = Image.open(io.BytesIO(image_data))
+        # Process image
+        image = Image.open(file.file).convert("RGB")
+        image.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE))  # optional speed-up
         
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        # Encode image once
+        encoded = model.encode_image(image)
         
-        # Generate caption using the correct Moondream2 API pattern
-        start_time = time.time()
+        # Generate caption
+        caption = model.caption(encoded)["caption"]
         
-        encoded_image = model.encode_image(image)
-        response = model.caption(encoded_image)
-        caption = response["caption"]
-        
+        # Calculate processing time
         processing_time = time.time() - start_time
         
-        meta = _current_model_meta()
+        # Return caption and answer if question provided
+        if question:
+            answer = model.query(encoded, question)["answer"]
+            return {
+                "caption": caption, 
+                "answer": answer,
+                "processing_time": processing_time
+            }
+        
         return {
             "caption": caption,
-            "prompt": prompt,
-            "processing_time": processing_time,
-            "model_info": {
-                "model": meta["model_name"],
-                "model_id": meta["model_id"],
-                "revision": meta["revision"],
-                "device": str(device)
-            }
+            "processing_time": processing_time
         }
         
     except Exception as e:
-        logger.error(f"Error generating direct caption: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Direct caption generation failed: {str(e)}")
+        logger.error(f"Error generating caption: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Caption generation failed: {str(e)}")
 
 @app.post("/caption/direct/base64")
 async def caption_image_direct_base64(request: CaptionRequest):
