@@ -66,19 +66,30 @@ model = None
 tokenizer = None
 device = None
 
-# Pydantic models (keeping existing ones for backward compatibility)
-class ImageDescriptionRequest(BaseModel):
+# Pydantic models for the new endpoints
+class CaptionRequestBase64(BaseModel):
     image: str = Field(..., description="Base64 encoded image")
-    prompt: str = Field(..., description="Text prompt for image description")
-    max_tokens: int = Field(default=512, description="Maximum tokens for response")
-    temperature: float = Field(default=0.7, description="Sampling temperature")
-    top_p: float = Field(default=0.9, description="Top-p sampling parameter")
+    length: str = Field(default="normal", description="Caption length: 'short' or 'normal'")
 
-class ImageDescriptionResponse(BaseModel):
-    description: str
-    confidence: float
+class CaptionResponse(BaseModel):
+    caption: str
+    length: str
     processing_time: float
     model_info: Dict[str, Any]
+
+class QueryRequestBase64(BaseModel):
+    image: str = Field(..., description="Base64 encoded image")
+    prompt: str = Field(..., description="Text prompt for visual question answering")
+    max_tokens: int = Field(default=512, description="Maximum tokens for response")
+    temperature: float = Field(default=0.7, description="Sampling temperature")
+
+class QueryResponse(BaseModel):
+    answer: str
+    prompt: str
+    processing_time: float
+    model_info: Dict[str, Any]
+
+# Note: Legacy ImageDescriptionRequest and ImageDescriptionResponse models removed
 
 class HealthResponse(BaseModel):
     status: str
@@ -169,7 +180,7 @@ def get_gpu_memory() -> Optional[Dict[str, Any]]:
 
 # Moondream2 caption generation function for queue
 async def generate_caption_with_moondream2(request: CaptionRequest) -> CaptionResult:
-    """Generate caption using Moondream2 model for queue system"""
+    """Generate caption using Moondream2 model.caption method for queue system"""
     if model is None:
         raise Exception("Model not loaded")
     
@@ -179,7 +190,7 @@ async def generate_caption_with_moondream2(request: CaptionRequest) -> CaptionRe
         # Decode image
         image = decode_base64_image(request.image_data)
         
-        # Generate caption using Moondream2
+        # Generate caption using Moondream2 model.caption method
         with torch.no_grad():
             response = model.caption(image, length="normal")
             caption = response["caption"]
@@ -223,7 +234,12 @@ async def root():
         "message": "Moondream2 VLM API with Simple Queue Management",
         "version": "2.0.0",
         "docs": "/docs",
-        "queue_status": "active"
+        "queue_status": "active",
+        "endpoints": {
+            "caption": "/caption (file upload) and /caption/base64 (base64 input) - uses model.caption method",
+            "query": "/query (file upload) and /query/base64 (base64 input) - uses model.query method",
+            "queue": "/caption/generate, /caption/job/{job_id}, /caption/stats - queue management endpoints"
+        }
     }
 
 @app.get("/health", response_model=HealthResponse)
@@ -295,102 +311,16 @@ async def get_caption_queue_stats():
         logger.error(f"Error getting queue stats: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get queue stats: {str(e)}")
 
-# Existing endpoints (keeping for backward compatibility)
+# Note: Legacy /describe endpoints removed - use /query endpoints instead
 
-@app.post("/describe", response_model=ImageDescriptionResponse)
-async def describe_image(request: ImageDescriptionRequest):
-    """Generate image description using Moondream2 (synchronous)"""
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-    
-    try:
-        start_time = time.time()
-        
-        # Decode image
-        image = decode_base64_image(request.image)
-        
-        # Generate description using the correct Moondream2 API
-        with torch.no_grad():
-            # Use the query method for visual question answering
-            response = model.query(image, request.prompt)
-            answer = response["answer"]
-        
-        processing_time = time.time() - start_time
-        
-        # Calculate confidence (placeholder - Moondream2 doesn't provide confidence scores)
-        confidence = 0.85  # Default confidence
-        
-        return ImageDescriptionResponse(
-            description=answer,
-            confidence=confidence,
-            processing_time=processing_time,
-            model_info={
-                "model": "Moondream2",
-                "device": str(device),
-                "max_tokens": request.max_tokens,
-                "temperature": request.temperature
-            }
-        )
-        
-    except Exception as e:
-        logger.error(f"Error generating description: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+# New Caption Endpoints using model.caption method
 
-@app.post("/describe/file")
-async def describe_image_file(
-    file: UploadFile = File(...),
-    prompt: str = "Describe this image in detail.",
-    max_tokens: int = 512,
-    temperature: float = 0.7,
-    top_p: float = 0.9
-):
-    """Generate image description from uploaded file"""
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-    
-    try:
-        # Validate file type
-        if not file.content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail="File must be an image")
-        
-        # Read and process image
-        image_data = await file.read()
-        image = Image.open(io.BytesIO(image_data))
-        
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        # Generate description using the correct Moondream2 API
-        start_time = time.time()
-        
-        with torch.no_grad():
-            response = model.query(image, prompt)
-            answer = response["answer"]
-        
-        processing_time = time.time() - start_time
-        
-        return {
-            "description": answer,
-            "confidence": 0.85,
-            "processing_time": processing_time,
-            "model_info": {
-                "model": "Moondream2",
-                "device": str(device),
-                "max_tokens": max_tokens,
-                "temperature": temperature
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error processing file: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
-
-@app.post("/caption")
+@app.post("/caption", response_model=CaptionResponse)
 async def caption_image(
     file: UploadFile = File(...),
     length: str = "normal"  # "short" or "normal"
 ):
-    """Generate image caption using Moondream2"""
+    """Generate image caption using Moondream2 model.caption method (file upload)"""
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     
@@ -415,19 +345,137 @@ async def caption_image(
         
         processing_time = time.time() - start_time
         
-        return {
-            "caption": caption,
-            "length": length,
-            "processing_time": processing_time,
-            "model_info": {
+        return CaptionResponse(
+            caption=caption,
+            length=length,
+            processing_time=processing_time,
+            model_info={
                 "model": "Moondream2",
                 "device": str(device)
             }
-        }
+        )
         
     except Exception as e:
         logger.error(f"Error generating caption: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Caption generation failed: {str(e)}")
+
+@app.post("/caption/base64", response_model=CaptionResponse)
+async def caption_image_base64(request: CaptionRequestBase64):
+    """Generate image caption using Moondream2 model.caption method (base64 input)"""
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    try:
+        # Decode base64 image
+        image = decode_base64_image(request.image)
+        
+        # Generate caption using the correct Moondream2 API
+        start_time = time.time()
+        
+        with torch.no_grad():
+            response = model.caption(image, length=request.length)
+            caption = response["caption"]
+        
+        processing_time = time.time() - start_time
+        
+        return CaptionResponse(
+            caption=caption,
+            length=request.length,
+            processing_time=processing_time,
+            model_info={
+                "model": "Moondream2",
+                "device": str(device)
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating caption: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Caption generation failed: {str(e)}")
+
+# New Query Endpoints using model.query method
+
+@app.post("/query", response_model=QueryResponse)
+async def query_image(
+    file: UploadFile = File(...),
+    prompt: str = "What do you see in this image?",
+    max_tokens: int = 512,
+    temperature: float = 0.7
+):
+    """Generate visual question answering using Moondream2 model.query method (file upload)"""
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    try:
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        
+        # Read and process image
+        image_data = await file.read()
+        image = Image.open(io.BytesIO(image_data))
+        
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Generate answer using the correct Moondream2 API
+        start_time = time.time()
+        
+        with torch.no_grad():
+            response = model.query(image, prompt)
+            answer = response["answer"]
+        
+        processing_time = time.time() - start_time
+        
+        return QueryResponse(
+            answer=answer,
+            prompt=prompt,
+            processing_time=processing_time,
+            model_info={
+                "model": "Moondream2",
+                "device": str(device),
+                "max_tokens": max_tokens,
+                "temperature": temperature
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating query response: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Query generation failed: {str(e)}")
+
+@app.post("/query/base64", response_model=QueryResponse)
+async def query_image_base64(request: QueryRequestBase64):
+    """Generate visual question answering using Moondream2 model.query method (base64 input)"""
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    try:
+        # Decode base64 image
+        image = decode_base64_image(request.image)
+        
+        # Generate answer using the correct Moondream2 API
+        start_time = time.time()
+        
+        with torch.no_grad():
+            response = model.query(image, request.prompt)
+            answer = response["answer"]
+        
+        processing_time = time.time() - start_time
+        
+        return QueryResponse(
+            answer=answer,
+            prompt=request.prompt,
+            processing_time=processing_time,
+            model_info={
+                "model": "Moondream2",
+                "device": str(device),
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating query response: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Query generation failed: {str(e)}")
 
 @app.get("/model/info")
 async def get_model_info():
