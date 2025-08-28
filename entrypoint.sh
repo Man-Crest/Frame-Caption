@@ -2,11 +2,16 @@
 
 set -e
 
-echo "🚀 Starting Moondream2 VLM Container..."
+# Debug information
+echo "🔍 Debug: Current working directory: $(pwd)"
+echo "🔍 Debug: Contents of current directory:"
+ls -la
+
+echo "�� Starting Moondream2 VLM Container..."
 
 # Function to check if transformers is installed
 check_transformers() {
-    echo "🔍 Checking Moondream package installation..."
+    echo "�� Checking Moondream package installation..."
     if python -c "import moondream; print('✅ moondream is installed')" 2>/dev/null; then
         echo "✅ moondream module found"
         return 0
@@ -24,7 +29,7 @@ check_transformers() {
 
 # Function to download model if not exists
 download_model() {
-    echo "📥 Checking for Moondream2 0.5B ONNX model..."
+    echo "�� Checking for Moondream2 0.5B ONNX model..."
     
     MODEL_PATH="/app/models/moondream2-onnx"
     MODEL_FILE="/app/models/moondream2-onnx/moondream-0_5b-int8.mf"
@@ -76,7 +81,7 @@ check_gpu() {
 validate_model_before_start() {
     echo "🔍 Validating model before starting application..."
     
-        MODEL_FILE="/app/models/moondream2-onnx/moondream-0_5b-int8.mf"
+    MODEL_FILE="/app/models/moondream2-onnx/moondream-0_5b-int8.mf"
     
     if [ -f "$MODEL_FILE" ] && [ -s "$MODEL_FILE" ]; then
         echo "✅ Model file exists and is valid: $MODEL_FILE"
@@ -90,7 +95,7 @@ validate_model_before_start() {
 
 # Function to start the application
 start_app() {
-    echo "🌙 Starting Moondream2 VLM API server..."
+    echo "�� Starting Moondream2 VLM API server..."
     
     # Validate model before starting
     if ! validate_model_before_start; then
@@ -115,7 +120,7 @@ start_app() {
 
 # Main execution
 main() {
-    echo "🔧 Initializing Moondream2 VLM..."
+    echo "�� Initializing Moondream2 VLM..."
     
     # Check GPU (optional)
     check_gpu

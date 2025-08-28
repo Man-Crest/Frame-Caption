@@ -16,8 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
-COPY entrypoint.sh .
-RUN chmod +x entrypoint.sh
+COPY entrypoint.sh . 
+
+# Fix line endings and set permissions
+RUN sed -i 's/\r$//' entrypoint.sh && \
+    chmod +x entrypoint.sh
 
 # Create logs directory
 RUN mkdir -p logs
@@ -25,5 +28,5 @@ RUN mkdir -p logs
 # Expose port
 EXPOSE 8000
 
-# Run entrypoint script
+# Run entrypoint script directly
 ENTRYPOINT ["./entrypoint.sh"]
