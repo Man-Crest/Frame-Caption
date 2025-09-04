@@ -1,5 +1,5 @@
-# Use Python base image for simplicity
-FROM python:3.10-slim
+# Use official CUDA-enabled PyTorch runtime image (includes Python, CUDA, cuDNN, and torch)
+FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn8-runtime
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
@@ -19,8 +19,9 @@ RUN apt-get update && apt-get install -y \
 # Install and configure Git LFS
 RUN git lfs install
 
-# Upgrade pip
-RUN pip install --upgrade pip
+# Upgrade pip and verify torch CUDA availability
+RUN pip install --upgrade pip && \
+    python -c "import torch; print('✅ Torch version:', torch.__version__, 'CUDA available:', torch.cuda.is_available())"
 
 # Copy requirements first for better caching
 COPY requirements.txt .

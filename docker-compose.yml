@@ -14,7 +14,10 @@ services:
       - PYTHONUNBUFFERED=1
       - TOKENIZERS_PARALLELISM=false
       - NVIDIA_VISIBLE_DEVICES=all
+      - QUEUE_WORKERS=1
+      - RESULT_WEBHOOK_URL=
     # 🎮 GPU Configuration
+    gpus: all
     deploy:
       resources:
         reservations:

@@ -1,6 +1,4 @@
-# Core ML dependencies
-torch>=2.0.0
-torchvision>=0.15.0
+# Core ML dependencies (torch/torchvision provided by base image)
 transformers>=4.35.0
 accelerate>=0.24.0
 
