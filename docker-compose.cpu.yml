@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  moondream2-vlm:
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    container_name: moondream2-vlm-cpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TOKENIZERS_PARALLELISM=false
+      - QUEUE_WORKERS=1
+      - RESULT_WEBHOOK_URL=
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+
